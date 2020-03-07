@@ -60,7 +60,8 @@ impl Qeds {
         let mut quad = unsafe {quad.assume_init()};
         // The base edge e.
         quad.edges[0].next = &quad.edges[0];
-        // eRod.edges[1].next = &quad.edges[1];
+        // eRot
+        quad.edges[1].next = &quad.edges[1];
         // eSym
         quad.edges[2].next = &quad.edges[2];
         // eSymRot
@@ -87,12 +88,12 @@ impl Qeds {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 // TODO: adjust this based on pointer width.
 #[repr(align(64))]
 pub struct Quad {
     pub edges: [Edge; 4],
-    pub data: [Edge; 4],
+    // pub data: [Box<Point>; 4],
 }
 
 impl Quad {
