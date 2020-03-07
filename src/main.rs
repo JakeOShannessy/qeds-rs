@@ -6,6 +6,12 @@ fn main() {
     println!("Edge Size: {:?}(0x{:x?})", std::mem::size_of::<Edge>(), std::mem::size_of::<Edge>());
     println!("Quad Size: {:?}(0x{:x?})", std::mem::size_of::<Quad>(), std::mem::size_of::<Quad>());
     println!("Quad Alignment: {:?}(0x{:x?})", std::mem::align_of::<Quad>(), std::mem::align_of::<Quad>());
+    // let quad_layout = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 64).unwrap();
+    // let quad_layout_standard = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 64).unwrap();
+    // println!("Quad Layout: {:?}", quad_layout);
+    // println!("Quad Layout Std: {:?}",quad_layout_standard);
+
+
     // Step 1. Create a Qeds data structure.
     let mut qeds = Qeds::new();
     // Step 2. Add some edges to it.
@@ -56,8 +62,17 @@ impl Qeds {
 
     /// Create an edge in the [`Qeds`].
     pub fn make_edge(&mut self) -> *mut Quad {
+        // let quad_layout = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 128).unwrap();
+        // let quad_layout_standard = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 64).unwrap();
+        // println!("Quad Layout: {:?}", quad_layout);
+        // println!("Quad Layout Std: {:?}",quad_layout_standard);
+        // let quad = unsafe {std::alloc::alloc_zeroed(quad_layout)};
+        // let mut quad: Box<Quad> = unsafe {Box::from_raw(quad as *mut Quad)};
+
+
         let quad: Box<MaybeUninit<Quad>> = Box::new_zeroed();
         let mut quad = unsafe {quad.assume_init()};
+
         // The base edge e.
         quad.edges[0].next = &quad.edges[0];
         // eRot
@@ -123,11 +138,11 @@ pub struct QuadTarget {
     pub f: u8,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub struct Vertex {
     /// The index of the edge which starts at this vertex.
     pub edge_index: usize,
-    // pub pos: Point,
+    pub pos: Point,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
