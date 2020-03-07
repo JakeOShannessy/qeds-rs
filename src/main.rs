@@ -162,7 +162,6 @@ impl Edge {
     #[inline(always)]
     fn offset(&self, offset: isize) -> &Edge {
         let offset1 = (self as *const Edge).align_offset(std::mem::align_of::<Quad>());
-        println!("offset1: {:?}", offset1);
         let ptr = if (offset1 == 0) || (offset1 > (4 + offset as usize)) {
             (self as *const Edge).wrapping_offset(offset)
         } else {
