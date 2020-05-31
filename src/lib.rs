@@ -399,7 +399,6 @@ mod tests {
         // Step 2. Add some edges to it.
         let q1 = qeds.make_edge();
         let q2 = qeds.make_edge();
-        let q3 = qeds.make_edge();
 
         let p1 = Point::new(0.0, 0.0);
         let p2 = Point::new(5.0, 0.0);
@@ -407,8 +406,9 @@ mod tests {
 
         unsafe {
             (*q1).edges[0].point = Box::new(Some(p1));
+            (*q1).edges[2].point = Box::new(Some(p2));
             (*q2).edges[0].point = Box::new(Some(p2));
-            (*q3).edges[0].point = Box::new(Some(p3));
+            (*q2).edges[2].point = Box::new(Some(p3));
         }
 
 
@@ -417,8 +417,6 @@ mod tests {
         unsafe {
             qeds.splice(&mut (*q1).edges[2], &mut (*q2).edges[0]);
             qeds.connect(&mut (*q1).edges[0], &mut (*q2).edges[0]);
-            // qeds.splice(&mut (*q2).edges[2], &mut (*q3).edges[0]);
-            // qeds.splice(&mut (*q3).edges[2], &mut (*q1).edges[0]);
         }
         // Get the first edge.
         let quad = qeds.quads.iter().next().unwrap();
