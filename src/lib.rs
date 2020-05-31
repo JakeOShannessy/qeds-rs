@@ -237,6 +237,25 @@ pub struct Face<'a> {
     pub edges: Vec<&'a Edge>,
 }
 
+impl Face<'_> {
+    pub fn midpoint(&self) -> Option<Point> {
+        let mut midpoints = Vec::new();
+        for edge in self.edges.iter() {
+            midpoints.push(edge.midpoint());
+            // println!("edge: {:?}, {:?}, {:?}", edge, edge.sym(), edge.midpoint());
+        }
+        let mut centre = Point::new(0.0, 0.0);
+        let n = midpoints.len();
+        for p in midpoints.into_iter() {
+            centre.x += p?.x;
+            centre.y += p?.y;
+        }
+        centre.x = centre.x / (n as f64);
+        centre.y = centre.y / (n as f64);
+        Some(centre)
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub struct Point {
     pub x: f64,
