@@ -62,7 +62,7 @@ impl Qeds {
     }
 
     /// Create an edge in the [`Qeds`].
-    pub fn make_edge(&mut self, point: Point) -> *mut Quad {
+    pub fn make_edge(&mut self) -> *mut Quad {
         // let quad_layout = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 128).unwrap();
         // let quad_layout_standard = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 64).unwrap();
         // println!("Quad Layout: {:?}", quad_layout);
@@ -75,7 +75,7 @@ impl Qeds {
 
         // The base edge e.
         quad.edges[0].next = &quad.edges[0];
-        quad.edges[0].point = Box::new(Some(point));
+        quad.edges[0].point = Box::new(None);
         // eRot
         quad.edges[1].next = &quad.edges[3];
         quad.edges[1].point = Box::new(None);
@@ -104,6 +104,23 @@ impl Qeds {
         let ta = (*alpha).onext() as *const Edge;
         (*alpha).next = (*beta).next;
         (*beta).next = ta;
+    }
+
+    /// Connect the Org of a with the Dest of b by creating a new edge.
+    pub unsafe fn connect(&mut self, edge_a: &mut Edge, edge_b: &mut Edge) {
+        // First, make the new edge.
+        let q = self.make_edge();
+        // let e = (*q).edges[0]as *mut Edge;
+        // Set the Org and Dest of this new edge.
+        unsafe {
+            // Set the Org of e to the Dest of b
+            // TODO: remove this clone
+            (*q).edges[0].point = edge_b.sym().point.clone();
+            // Set the Dest of e to the Org of a
+            ((*q).edges[2]).point = edge_a.point.clone();
+        }
+        self.splice(&mut (*q).edges[0],edge_b.sym_mut());
+        self.splice(edge_a,&mut (*q).edges[2]);
     }
 
     pub unsafe fn join(&mut self, edge_a: &mut Edge, edge_b: &mut Edge) {
@@ -178,6 +195,11 @@ impl Edge {
     }
 
     #[inline(always)]
+    pub fn sym_mut(&mut self) -> &mut Edge {
+        self.offset_mut(2)
+    }
+
+    #[inline(always)]
     pub fn sym_rot(&self) -> &Edge {
         self.offset(3)
     }
@@ -216,7 +238,8 @@ impl Edge {
         loop {
             edges.push(current_next_edge);
             current_next_edge = current_next_edge.sym().r_next();
-            if current_next_edge == first_next_edge {
+            // TODO: use
+            if std::ptr::eq(current_next_edge, first_next_edge) {
                 break;
             }
         }
@@ -227,7 +250,6 @@ impl Edge {
         let this_point = (*self.point)?;
         let next_point = (*self.sym().point)?;
         Some(this_point.midpoint(next_point))
-
     }
 }
 
@@ -306,11 +328,13 @@ mod tests {
         // Step 1. Create a Qeds data structure.
         let mut qeds = Qeds::new();
         // Step 2. Add some edges to it.
-        qeds.make_edge(Point::new(0.0, 0.0));
+        qeds.make_edge();
+        // let p1 = Point::new(0.0, 0.0);
         // Step 3. Get the single edge in the data structure.
         let e: &Edge = unsafe { &(*qeds.quads[0]).edges[0] };
         // e with Rot applied 4 times is the same edge as e
         assert_eq!(e.rot().rot().rot().rot() as *const Edge, e as *const Edge);
+        assert!(std::ptr::eq(e.rot().rot().rot().rot() as *const Edge, e as *const Edge));
     }
 
     #[test]
@@ -318,7 +342,7 @@ mod tests {
         // Step 1. Create a Qeds data structure.
         let mut qeds = Qeds::new();
         // Step 2. Add some edges to it.
-        qeds.make_edge(Point::new(0.0, 0.0));
+        qeds.make_edge();
         // Step 3. Get the single edge in the data structure.
         let e: &Edge = unsafe { &(*qeds.quads[0]).edges[0] };
         // e with Rot applied 2 times is not the same edge as e
@@ -326,27 +350,29 @@ mod tests {
     }
 
     #[test]
-    fn e4() {
+    fn segment() {
         // Step 1. Create a Qeds data structure.
         let mut qeds = Qeds::new();
         let point_a = Point::new(0.0, 0.0);
         let point_b = Point::new(5.0, 0.0);
         // Step 2. Add some edges to it.
-        let q1 = qeds.make_edge(point_a);
-        let q2 = qeds.make_edge(point_b);
+        let q1 = qeds.make_edge();
+        // let q2 = qeds.make_edge();
         unsafe {
-            qeds.join(&mut (*q1).edges[2], &mut (*q2).edges[0]);
+            (*q1).edges[0].point = Box::new(Some(point_a));
+            (*q1).edges[2].point = Box::new(Some(point_b));
+            // qeds.join(&mut (*q1).edges[2], &mut (*q2).edges[0]);
         }
 
         // Step 3. Get the single edge in the data structure.
         let e: &Edge = unsafe { &(*qeds.quads[0]).edges[0] };
-        let e2: &Edge = unsafe { &(*qeds.quads[1]).edges[0] };
+        // let e2: &Edge = unsafe { &(*qeds.quads[1]).edges[0] };
         // e with sym applied 2 times is not the same edge as e
         assert_eq!(e.sym().sym() as *const Edge, e as *const Edge);
-        assert_eq!((*e.point).unwrap(), point_a);
-        assert_eq!((*e2.point).unwrap(), point_b);
-        assert_eq!((*e.sym().r_next().point).unwrap(), point_b);
-        assert_eq!((*e.sym().point).unwrap(), point_b);
+        // The Org of the edge is a point and it is point_a
+        assert_eq!((*e.point), Some(point_a));
+        // The Dest of the edge (eSymOrg) is point_b
+        assert_eq!((*e.sym().point), Some(point_b));
     }
 
 
@@ -355,7 +381,11 @@ mod tests {
         // Step 1. Create a Qeds data structure.
         let mut qeds = Qeds::new();
         // Step 2. Add some edges to it.
-        qeds.make_edge(Point::new(0.0, 0.0));
+        let q1 = qeds.make_edge();
+        let p1 = Point::new(0.0, 0.0);
+        unsafe {
+            (*q1).edges[0].point = Box::new(Some(p1));
+        }
         // Step 3. Get the single edge in the data structure.
         let e: &Edge = unsafe { &(*qeds.quads[0]).edges[0] };
         // e with Rot applied 2 times is not the same edge as e
@@ -367,16 +397,28 @@ mod tests {
         // Step 1. Create a Qeds data structure.
         let mut qeds = Qeds::new();
         // Step 2. Add some edges to it.
-        let q1 = qeds.make_edge(Point::new(0.0, 0.0));
-        let q2 = qeds.make_edge(Point::new(5.0, 0.0));
-        let q3 = qeds.make_edge(Point::new(2.5, 5.0));
+        let q1 = qeds.make_edge();
+        let q2 = qeds.make_edge();
+        let q3 = qeds.make_edge();
+
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(5.0, 0.0);
+        let p3 = Point::new(2.5, 5.0);
+
+        unsafe {
+            (*q1).edges[0].point = Box::new(Some(p1));
+            (*q2).edges[0].point = Box::new(Some(p2));
+            (*q3).edges[0].point = Box::new(Some(p3));
+        }
+
 
         // Step 3. Splice those edges together so that we actually have
         // something of a network.
         unsafe {
             qeds.splice(&mut (*q1).edges[2], &mut (*q2).edges[0]);
-            qeds.splice(&mut (*q2).edges[2], &mut (*q3).edges[0]);
-            qeds.splice(&mut (*q3).edges[2], &mut (*q1).edges[0]);
+            qeds.connect(&mut (*q1).edges[0], &mut (*q2).edges[0]);
+            // qeds.splice(&mut (*q2).edges[2], &mut (*q3).edges[0]);
+            // qeds.splice(&mut (*q3).edges[2], &mut (*q1).edges[0]);
         }
         // Get the first edge.
         let quad = qeds.quads.iter().next().unwrap();
@@ -393,9 +435,19 @@ mod tests {
         // Step 1. Create a Qeds data structure.
         let mut qeds = Qeds::new();
         // Step 2. Add some edges to it.
-        let q1 = qeds.make_edge(Point::new(0.0, 0.0));
-        let q2 = qeds.make_edge(Point::new(5.0, 0.0));
-        let q3 = qeds.make_edge(Point::new(2.5, 5.0));
+        let q1 = qeds.make_edge();
+        let q2 = qeds.make_edge();
+        let q3 = qeds.make_edge();
+
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(5.0, 0.0);
+        let p3 = Point::new(2.5, 5.0);
+
+        unsafe {
+            (*q1).edges[0].point = Box::new(Some(p1));
+            (*q2).edges[0].point = Box::new(Some(p2));
+            (*q3).edges[0].point = Box::new(Some(p3));
+        }
 
         // Step 3. Splice those edges together so that we actually have
         // something of a network.
@@ -415,7 +467,6 @@ mod tests {
         let mut midpoints = Vec::new();
         for edge in face.edges.iter() {
             midpoints.push(edge.midpoint());
-            // println!("edge: {:?}, {:?}, {:?}", edge, edge.sym(), edge.midpoint());
         }
         let mut centre = Point::new(0.0, 0.0);
         let n = midpoints.len();

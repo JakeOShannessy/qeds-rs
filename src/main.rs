@@ -23,8 +23,14 @@ fn main() {
     // Step 1. Create a Qeds data structure.
     let mut qeds = Qeds::new();
     // Step 2. Add some edges to it.
-    let q1 = qeds.make_edge(Point::new(0.0,0.0));
-    let q2 = qeds.make_edge(Point::new(5.0,0.0));
+    let q1 = qeds.make_edge();
+    let q2 = qeds.make_edge();
+    let p1 = Point::new(0.0,0.0);
+    let p2 = Point::new(5.0,0.0);
+    unsafe {
+        (*q1).edges[0].point = Box::new(Some(p1));
+        (*q2).edges[0].point = Box::new(Some(p2));
+    }
     println!("QEDS1: {:?}", qeds);
     for quad in qeds.quads.iter() {
         let quad: &Quad = unsafe { &**quad };
