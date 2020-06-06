@@ -73,7 +73,7 @@ impl Qeds {
         (*q).edges[0].point = edge_a.sym().point.clone();
         // Set the Dest of e to the Org of b
         ((*q).edges[2]).point = edge_b.point.clone();
-        self.splice(&mut (*q).edges[0],edge_a.l_next_mut());
+        self.splice(&mut (*q).edges[0], edge_a.l_next_mut());
         self.splice(&mut (*q).edges[2], edge_b);
         q
     }
@@ -102,18 +102,18 @@ pub struct Quad {
 impl Quad {}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct QuadRef<'a> {
+pub struct EdgeRef<'a> {
     pub qeds: &'a Qeds,
-    pub target: QuadTarget,
+    pub target: EdgeTarget,
 }
 
 // r and f can fit in one byte. If we limit the size of qeds we could fit it in
 // the edge index.
 
-impl<'a> QuadRef<'a> {}
+impl<'a> EdgeRef<'a> {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct QuadTarget {
+pub struct EdgeTarget {
     // The index of the Quad in the Qeds.
     pub e: usize,
     // Can only be 0, 1, 2, or 3.
@@ -280,8 +280,8 @@ impl Point {
     }
     pub fn midpoint(self, other: Self) -> Self {
         Self {
-            x: (self.x + other.x)/2.0,
-            y: (self.y + other.y)/2.0,
+            x: (self.x + other.x) / 2.0,
+            y: (self.y + other.y) / 2.0,
         }
     }
 }
@@ -302,8 +302,8 @@ impl Mul<f64> for Point {
 
     fn mul(self, other: f64) -> Self {
         Self {
-            x: self.x*other,
-            y: self.y*other,
+            x: self.x * other,
+            y: self.y * other,
         }
     }
 }
@@ -335,7 +335,10 @@ mod tests {
         let e: &Edge = unsafe { &(*qeds.quads[0]).edges[0] };
         // e with Rot applied 4 times is the same edge as e
         assert_eq!(e.rot().rot().rot().rot() as *const Edge, e as *const Edge);
-        assert!(std::ptr::eq(e.rot().rot().rot().rot() as *const Edge, e as *const Edge));
+        assert!(std::ptr::eq(
+            e.rot().rot().rot().rot() as *const Edge,
+            e as *const Edge
+        ));
     }
 
     #[test]
@@ -374,7 +377,6 @@ mod tests {
         assert_eq!((*e.sym().point), Some(point_b));
     }
 
-
     #[test]
     fn rot2_eq_sym() {
         // Step 1. Create a Qeds data structure.
@@ -391,8 +393,6 @@ mod tests {
         assert_eq!(e.rot().rot() as *const Edge, e.sym() as *const Edge);
     }
 
-
-
     #[test]
     fn d5() {
         let mut qeds = Qeds::new();
@@ -402,9 +402,18 @@ mod tests {
             assert_eq!((*q1).edges[0].sym(), &(*q1).edges[2]);
             assert_eq!((*q1).edges[0].sym().rot(), &(*q1).edges[3]);
             assert_eq!((*q1).edges[0].rot().sym(), &(*q1).edges[3]);
-            assert_eq!((*q1).edges[0].rot().onext() as *const Edge, (*q1).edges[0].rot().sym() as *const Edge);
-            assert_eq!((*q1).edges[0].rot().sym().onext() as *const Edge, (*q1).edges[0].rot() as *const Edge);
-            assert_eq!((*q1).edges[1].onext() as *const Edge, &(*q1).edges[3] as *const Edge);
+            assert_eq!(
+                (*q1).edges[0].rot().onext() as *const Edge,
+                (*q1).edges[0].rot().sym() as *const Edge
+            );
+            assert_eq!(
+                (*q1).edges[0].rot().sym().onext() as *const Edge,
+                (*q1).edges[0].rot() as *const Edge
+            );
+            assert_eq!(
+                (*q1).edges[1].onext() as *const Edge,
+                &(*q1).edges[3] as *const Edge
+            );
         }
     }
 
@@ -421,12 +430,18 @@ mod tests {
             println!("q1Onext: {:?}", (*q1).edges[0].onext() as *const Edge);
             println!("q1Rot: {:?}", (*q1).edges[0].rot() as *const Edge);
             println!("q1RotSym: {:?}", (*q1).edges[0].rot().sym() as *const Edge);
-            println!("q1RotOnext: {:?}", (*q1).edges[0].rot().onext() as *const Edge);
+            println!(
+                "q1RotOnext: {:?}",
+                (*q1).edges[0].rot().onext() as *const Edge
+            );
             println!("q2: {:?}", &(*q2).edges[0] as *const Edge);
             println!("q2Onext: {:?}", (*q2).edges[0].onext() as *const Edge);
             println!("q2Rot: {:?}", (*q2).edges[0].rot() as *const Edge);
             println!("q2RotSym: {:?}", (*q2).edges[0].rot().sym() as *const Edge);
-            println!("q2RotOnext: {:?}", (*q2).edges[0].rot().onext() as *const Edge);
+            println!(
+                "q2RotOnext: {:?}",
+                (*q2).edges[0].rot().onext() as *const Edge
+            );
             assert_eq!((*q1).edges[1].next, &(*q1).edges[3] as *const Edge);
             qeds.splice(&mut (*q1).edges[2], &mut (*q2).edges[0]);
             assert_eq!((*q1).edges[2].onext(), &(*q2).edges[0]);
@@ -435,26 +450,30 @@ mod tests {
             println!("q1Onext: {:?}", (*q1).edges[0].onext() as *const Edge);
             println!("q1Rot: {:?}", (*q1).edges[0].rot() as *const Edge);
             println!("q1RotSym: {:?}", (*q1).edges[0].rot().sym() as *const Edge);
-            println!("q1RotOnext: {:?}", (*q1).edges[0].rot().onext() as *const Edge);
+            println!(
+                "q1RotOnext: {:?}",
+                (*q1).edges[0].rot().onext() as *const Edge
+            );
             println!("q2: {:?}", &(*q2).edges[0] as *const Edge);
             println!("q2Onext: {:?}", (*q2).edges[0].onext() as *const Edge);
             println!("q2Rot: {:?}", (*q2).edges[0].rot() as *const Edge);
             println!("q2RotSym: {:?}", (*q2).edges[0].rot().sym() as *const Edge);
-            println!("q2RotOnext: {:?}", (*q2).edges[0].rot().onext() as *const Edge);
+            println!(
+                "q2RotOnext: {:?}",
+                (*q2).edges[0].rot().onext() as *const Edge
+            );
 
             // 1. aSymOnext == b
             assert_eq!((*q1).edges[0].sym().onext(), &(*q2).edges[0]);
             // 2. bOnext == aSym
-            assert_eq!((*q2).edges[0].onext(),(*q1).edges[0].sym());
+            assert_eq!((*q2).edges[0].onext(), (*q1).edges[0].sym());
             // 3. aRotOnext == bRot
-            assert_ne!((*q1).edges[0].rot().onext(),(*q1).edges[0].rot());
+            assert_ne!((*q1).edges[0].rot().onext(), (*q1).edges[0].rot());
             // 4. bRotOnext == aRot
-            assert_eq!((*q2).edges[0].rot().onext(),(*q1).edges[0].rot());
+            assert_eq!((*q2).edges[0].rot().onext(), (*q1).edges[0].rot());
 
             // bLenxt = bSym
-            assert_eq!((*q2).edges[0].l_next(),&(*q2).edges[2]);
-
-
+            assert_eq!((*q2).edges[0].l_next(), &(*q2).edges[2]);
         }
     }
 
@@ -492,14 +511,29 @@ mod tests {
         let quad = qeds.quads.iter().next().unwrap();
         let quad: &Quad = unsafe { &**quad };
         let edge = &quad.edges[0];
-        unsafe{
+        unsafe {
             println!("Edge1: {:?} -> {:?}", edge, edge.sym().point);
-            println!("Edge2: {:?} -> {:?}", edge.l_next(), edge.l_next().sym().point);
-            println!("Edge3: {:?} -> {:?}", edge.l_next().l_next(), edge.l_next().l_next().sym().point);
-            println!("Edge4: {:?} -> {:?}", edge.l_next().l_next().l_next(), edge.l_next().l_next().l_next().sym().point);
+            println!(
+                "Edge2: {:?} -> {:?}",
+                edge.l_next(),
+                edge.l_next().sym().point
+            );
+            println!(
+                "Edge3: {:?} -> {:?}",
+                edge.l_next().l_next(),
+                edge.l_next().l_next().sym().point
+            );
+            println!(
+                "Edge4: {:?} -> {:?}",
+                edge.l_next().l_next().l_next(),
+                edge.l_next().l_next().l_next().sym().point
+            );
 
             assert_eq!(edge.l_next() as *const Edge, &(*q2).edges[0] as *const Edge);
-            assert_eq!(edge.l_next().l_next() as *const Edge, &(*qeds.quads[2]).edges[0] as *const Edge);
+            assert_eq!(
+                edge.l_next().l_next() as *const Edge,
+                &(*qeds.quads[2]).edges[0] as *const Edge
+            );
             assert_eq!(edge.l_next().l_next().l_next() as *const Edge, edge);
 
             assert_eq!(*edge.point, Some(p1));
@@ -511,7 +545,11 @@ mod tests {
         }
         // Get the face from it.
         let face = edge.l_face();
-        for (edge, (p1,p2)) in face.edges.iter().zip(vec![(p2,p3),(p3,p1),(p1,p2)].into_iter()) {
+        for (edge, (p1, p2)) in face
+            .edges
+            .iter()
+            .zip(vec![(p2, p3), (p3, p1), (p1, p2)].into_iter())
+        {
             println!("Edge[]: {:?} -> {:?}", edge.point, edge.sym().point);
             assert_eq!(*edge.point, Some(p1));
             assert_eq!(*edge.sym().point, Some(p2));
@@ -557,18 +595,27 @@ mod tests {
             println!("q1Onext: {:?}", (*q1).edges[0].onext() as *const Edge);
             println!("q1Rot: {:?}", (*q1).edges[0].rot() as *const Edge);
             println!("q1RotSym: {:?}", (*q1).edges[0].rot().sym() as *const Edge);
-            println!("q1RotOnext: {:?}", (*q1).edges[0].rot().onext() as *const Edge);
+            println!(
+                "q1RotOnext: {:?}",
+                (*q1).edges[0].rot().onext() as *const Edge
+            );
             println!("q2: {:?}", &(*q2).edges[0] as *const Edge);
             println!("q2Onext: {:?}", (*q2).edges[0].onext() as *const Edge);
             println!("q2Rot: {:?}", (*q2).edges[0].rot() as *const Edge);
             println!("q2RotSym: {:?}", (*q2).edges[0].rot().sym() as *const Edge);
-            println!("q2RotOnext: {:?}", (*q2).edges[0].rot().onext() as *const Edge);
+            println!(
+                "q2RotOnext: {:?}",
+                (*q2).edges[0].rot().onext() as *const Edge
+            );
 
             qeds.connect(&mut (*q2).edges[0], &mut (*q1).edges[0]);
             // At this point the triangle has been created.
 
             {
-                assert_eq!((*q1).edges[0].l_next() as *const Edge, &(*q2).edges[0] as *const Edge);
+                assert_eq!(
+                    (*q1).edges[0].l_next() as *const Edge,
+                    &(*q2).edges[0] as *const Edge
+                );
                 assert_eq!(*(*q1).edges[0].point, Some(p1));
                 assert_eq!(*(*q1).edges[0].sym().point, Some(p2));
                 assert_eq!(*(*q1).edges[0].l_next().point, Some(p2));
@@ -598,19 +645,41 @@ mod tests {
             qeds.connect(&mut (*q2).edges[2], &mut (*q4).edges[0]);
 
             // Check the first triangle face
-            assert_eq!((*q1).edges[0].rot().sym().onext(), (*q2).edges[0].rot().sym());
-
+            assert_eq!(
+                (*q1).edges[0].rot().sym().onext(),
+                (*q2).edges[0].rot().sym()
+            );
         }
         // Get the first edge.
         let quad = qeds.quads.iter().next().unwrap();
         let quad: &Quad = unsafe { &**quad };
         let edge = &quad.edges[0];
 
-        unsafe{
-            println!("Edge1[{:?}]: {:?} -> {:?}", edge as *const Edge, edge.point, edge.sym().point);
-            println!("Edge2[{:?}]: {:?} -> {:?}", edge.l_next() as *const Edge, edge.l_next().point, edge.l_next().sym().point);
-            println!("Edge3[{:?}]: {:?} -> {:?}", edge.l_next().l_next() as *const Edge, edge.l_next().l_next().point, edge.l_next().l_next().sym().point);
-            println!("Edge4[{:?}]: {:?} -> {:?}", edge.l_next().l_next().l_next() as *const Edge, edge.l_next().l_next().l_next().point, edge.l_next().l_next().l_next().sym().point);
+        unsafe {
+            println!(
+                "Edge1[{:?}]: {:?} -> {:?}",
+                edge as *const Edge,
+                edge.point,
+                edge.sym().point
+            );
+            println!(
+                "Edge2[{:?}]: {:?} -> {:?}",
+                edge.l_next() as *const Edge,
+                edge.l_next().point,
+                edge.l_next().sym().point
+            );
+            println!(
+                "Edge3[{:?}]: {:?} -> {:?}",
+                edge.l_next().l_next() as *const Edge,
+                edge.l_next().l_next().point,
+                edge.l_next().l_next().sym().point
+            );
+            println!(
+                "Edge4[{:?}]: {:?} -> {:?}",
+                edge.l_next().l_next().l_next() as *const Edge,
+                edge.l_next().l_next().l_next().point,
+                edge.l_next().l_next().l_next().sym().point
+            );
 
             assert_eq!(edge.l_next() as *const Edge, &(*q2).edges[0] as *const Edge);
             assert_eq!(*edge.point, Some(p1));
@@ -627,7 +696,11 @@ mod tests {
         assert_eq!(face.edges.len(), 3);
         let mut midpoints = Vec::new();
         println!("looping through face");
-        for (edge, (p1,p2)) in face.edges.iter().zip(vec![(p2,p3),(p3,p1),(p1,p2)].into_iter()) {
+        for (edge, (p1, p2)) in face
+            .edges
+            .iter()
+            .zip(vec![(p2, p3), (p3, p1), (p1, p2)].into_iter())
+        {
             println!("Edge[]: {:?} -> {:?}", edge.point, edge.sym().point);
             assert_eq!(*edge.point, Some(p1));
             assert_eq!(*edge.sym().point, Some(p2));
@@ -642,6 +715,6 @@ mod tests {
         }
         centre.x = centre.x / (n as f64);
         centre.y = centre.y / (n as f64);
-        assert_eq!(centre, Point::new(2.5,5.0/3.0))
+        assert_eq!(centre, Point::new(2.5, 5.0 / 3.0))
     }
 }

@@ -25,8 +25,8 @@ fn main() {
     // Step 2. Add some edges to it.
     let q1 = qeds.make_edge();
     let q2 = qeds.make_edge();
-    let p1 = Point::new(0.0,0.0);
-    let p2 = Point::new(5.0,0.0);
+    let p1 = Point::new(0.0, 0.0);
+    let p2 = Point::new(5.0, 0.0);
     unsafe {
         (*q1).edges[0].point = Box::new(Some(p1));
         (*q2).edges[0].point = Box::new(Some(p2));
