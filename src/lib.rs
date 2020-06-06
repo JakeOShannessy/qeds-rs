@@ -5,49 +5,7 @@ use core::ops::Add;
 use core::ops::Sub;
 use std::ops::Mul;
 
-// fn main() {
-//     println!("Edge Size: {:?}(0x{:x?})", std::mem::size_of::<Edge>(), std::mem::size_of::<Edge>());
-//     println!("Quad Size: {:?}(0x{:x?})", std::mem::size_of::<Quad>(), std::mem::size_of::<Quad>());
-//     println!("Quad Alignment: {:?}(0x{:x?})", std::mem::align_of::<Quad>(), std::mem::align_of::<Quad>());
-//     // let quad_layout = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 64).unwrap();
-//     // let quad_layout_standard = std::alloc::Layout::from_size_align(std::mem::size_of::<Quad>(), 64).unwrap();
-//     // println!("Quad Layout: {:?}", quad_layout);
-//     // println!("Quad Layout Std: {:?}",quad_layout_standard);
-
-//     // Step 1. Create a Qeds data structure.
-//     let mut qeds = Qeds::new();
-//     // Step 2. Add some edges to it.
-//     let q1 = qeds.make_edge();
-//     let q2 = qeds.make_edge();
-//     println!("QEDS1: {:?}", qeds);
-//     for quad in qeds.quads.iter(){
-//         let quad: &Quad = unsafe {&**quad};
-//         println!("Quad: {:?}", quad);
-//         for edge in quad.edges.iter() {
-//             let e = edge;
-//             println!("Edge: {:?}", e);
-//             let e_rot = e.rot();
-//             println!("EdgeRot: {:?}", e_rot);
-//             let e_rot2 = e_rot.rot();
-//             println!("EdgeRotRot: {:?}", e_rot2);
-//             let e_rot3 = e_rot2.rot();
-//             println!("EdgeRotRotRot: {:?}", e_rot3);
-//             let e_rot4 = e_rot3.rot();
-//             println!("EdgeRotRotRotRot: {:?}", e_rot4);
-//             break;
-//         }
-//         break;
-//     }
-//     unsafe {
-//         let e1 = &mut (*q1).edges[0];
-//         let e2= &mut (*q2).edges[0];
-//         qeds.splice(e1,e2)
-//     }
-//     println!("QEDS2: {:?}", qeds);
-// }
-
 /// This data structure is a single instance of a quad-edge data structure.
-/// Rather than using pointers it uses offsets into a vectors.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Qeds {
     pub quads: Vec<*mut Quad>,
@@ -55,8 +13,8 @@ pub struct Qeds {
 }
 
 impl Qeds {
-    /// Create the simplest [`Qeds`] with a single [`Edge`] and a single [`Face`].
-    /// Covers the whole sphere.
+    /// Create the simplest [`Qeds`] with a single [`Edge`] and a single
+    /// [`Face`]. Covers the whole sphere.
     pub fn new() -> Self {
         let quads = Vec::new();
         Self { quads }
@@ -102,12 +60,9 @@ impl Qeds {
         edge_a.next = edge_b.next;
         edge_b.next = ta;
 
-        println!("Original Alpha: {:?}", alpha_p);
-        println!("Original Alpha Onext: {:?}", (*alpha_p).next);
         let ta = (*alpha).onext() as *const Edge;
         (*alpha).next = (*beta).next;
         (*beta).next = ta;
-        println!("New Alpha Onext: {:?}", (*alpha_p).next);
     }
 
     /// Connect the Org of a with the Dest of b by creating a new edge.
@@ -115,7 +70,6 @@ impl Qeds {
         // First, make the new edge.
         let q = self.make_edge();
         // Set the Org of e to the Dest of a
-        // TODO: remove this clone
         (*q).edges[0].point = edge_a.sym().point.clone();
         // Set the Dest of e to the Org of b
         ((*q).edges[2]).point = edge_b.point.clone();
@@ -123,6 +77,12 @@ impl Qeds {
         self.splice(&mut (*q).edges[2], edge_b);
         q
     }
+
+    // pub unsafe fn delete(&mut self, e: &mut Edge) {
+    //     // TODO: we don't actually free the memory here.
+    //     self.splice(e, e.oprev_mut());
+    //     self.splice(e.sym_mut(), e.sym_mut().oprev_mut());
+    // }
 
     pub unsafe fn join(&mut self, edge_a: &mut Edge, edge_b: &mut Edge) {
         self.splice(edge_a, edge_b);
@@ -215,16 +175,29 @@ impl Edge {
         let ptr = (self as *const Edge).wrapping_offset(d);
         unsafe { &*ptr }
     }
+
     #[inline(always)]
     fn offset_mut(&mut self, offset: isize) -> &mut Edge {
         let ptr: *const Edge = self.offset(offset);
         unsafe { &mut *(ptr as *mut Edge) }
     }
 
+    #[inline(always)]
     pub fn onext(&self) -> &Edge {
         unsafe { &*self.next }
     }
 
+    #[inline(always)]
+    pub fn oprev(&self) -> &Edge {
+        self.rot().onext().rot()
+    }
+
+    #[inline(always)]
+    pub fn oprev_mut(&mut self) -> &mut Edge {
+        self.rot_mut().onext_mut().rot_mut()
+    }
+
+    #[inline(always)]
     pub fn onext_mut(&mut self) -> &mut Edge {
         unsafe {
             let const_next = self.next as *mut Edge;
@@ -232,14 +205,17 @@ impl Edge {
         }
     }
 
+    #[inline(always)]
     pub fn r_next(&self) -> &Edge {
         self.rot().onext().rot()
     }
 
+    #[inline(always)]
     pub fn l_next(&self) -> &Edge {
         self.rot().rot().rot().onext().rot()
     }
 
+    #[inline(always)]
     pub fn l_next_mut(&mut self) -> &mut Edge {
         self.rot_mut().rot_mut().rot_mut().onext_mut().rot_mut()
     }
@@ -279,7 +255,6 @@ impl Face<'_> {
         let mut midpoints = Vec::new();
         for edge in self.edges.iter() {
             midpoints.push(edge.midpoint());
-            // println!("edge: {:?}, {:?}, {:?}", edge, edge.sym(), edge.midpoint());
         }
         let mut centre = Point::new(0.0, 0.0);
         let n = midpoints.len();
@@ -387,13 +362,11 @@ mod tests {
         unsafe {
             (*q1).edges[0].point = Box::new(Some(point_a));
             (*q1).edges[2].point = Box::new(Some(point_b));
-            // qeds.join(&mut (*q1).edges[2], &mut (*q2).edges[0]);
         }
 
         // Step 3. Get the single edge in the data structure.
         let e: &Edge = unsafe { &(*qeds.quads[0]).edges[0] };
-        // let e2: &Edge = unsafe { &(*qeds.quads[1]).edges[0] };
-        // e with sym applied 2 times is not the same edge as e
+        // e with sym applied 2 times is the same edge as e
         assert_eq!(e.sym().sym() as *const Edge, e as *const Edge);
         // The Org of the edge is a point and it is point_a
         assert_eq!((*e.point), Some(point_a));
@@ -590,12 +563,9 @@ mod tests {
             println!("q2Rot: {:?}", (*q2).edges[0].rot() as *const Edge);
             println!("q2RotSym: {:?}", (*q2).edges[0].rot().sym() as *const Edge);
             println!("q2RotOnext: {:?}", (*q2).edges[0].rot().onext() as *const Edge);
-            // println!("(*q1).edges[0].rot().onext(): {:?}", (*q1).edges[0].rot().onext() as *const Edge);
-            // println!("(*q2).edges[0].rot(): {:?}", (*q2).edges[0].rot() as *const Edge);
-            // assert_eq!((*q1).edges[0].rot().onext(), (*q2).edges[0].rot());
-
 
             qeds.connect(&mut (*q2).edges[0], &mut (*q1).edges[0]);
+            // At this point the triangle has been created.
 
             {
                 assert_eq!((*q1).edges[0].l_next() as *const Edge, &(*q2).edges[0] as *const Edge);
@@ -605,19 +575,15 @@ mod tests {
                 assert_eq!(*(*q1).edges[0].l_next().sym().point, Some(p3));
                 assert_eq!(*(*q1).edges[0].l_next().l_next().point, Some(p3));
                 assert_eq!(*(*q1).edges[0].l_next().l_next().sym().point, Some(p1));
-
             }
 
+            // This is the third edge from the triangle.
             let e_p = (*q2).edges[2].next as *const Edge;
             let e = e_p as *mut Edge;
 
-            // assert_eq!((*q2).edges[0].rot().onext(), (*q1).edges[0].rot());
-            // assert_eq!((*q1).edges[0].rot(), (&*e).rot());
-            // assert_eq!((*q1).edges[0].rot().sym().onext().rot(), &(*q2).edges[0]);
-            // assert_eq!((*q2).edges[2].onext(), &*e);
-
-
             assert_eq!((&*e).onext(), &(*q2).edges[2]);
+
+            // Now we want to splice on the fourth edge.
             qeds.splice(&mut (*q4).edges[2], &mut (*q2).edges[2]);
             // 1. dSymOnext == c
             assert_eq!((*q4).edges[2].onext(), &*e);
@@ -627,6 +593,13 @@ mod tests {
             assert_eq!((*q4).edges[2].rot().onext(), (*q2).edges[0].rot());
             // 4. cRotOnext == dRot
             assert_eq!((&*e).rot().onext(), (*q4).edges[0].rot());
+
+            // Now we add in the fifth edge, closing the quad.
+            qeds.connect(&mut (*q2).edges[2], &mut (*q4).edges[0]);
+
+            // Check the first triangle face
+            assert_eq!((*q1).edges[0].rot().sym().onext(), (*q2).edges[0].rot().sym());
+
         }
         // Get the first edge.
         let quad = qeds.quads.iter().next().unwrap();
