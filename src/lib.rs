@@ -4,6 +4,140 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::ops::Mul;
 
+pub struct Triangulation {
+    pub qeds: Qeds,
+    pub free_point: Option<Point>,
+    pub boundary_edge: Option<EdgeTarget>,
+}
+
+impl Triangulation {
+    pub fn new() -> Self {
+        Self {
+            qeds: Qeds::new(),
+            free_point: None,
+            boundary_edge: None,
+        }
+    }
+
+    pub fn add_point(&mut self, point: Point) {
+        // TODO: consider: points lying on other points, on lines, and within triangles.
+        if self.qeds.quads.len() == 0 {
+            // If there are no points, we can just add a free-floating point.
+            if let Some(free_point) = self.free_point {
+                let e = self.qeds.make_edge().target();
+                // Assign the appropriate geometry to the edge.
+                unsafe {
+                    self.qeds.edge_mut(e).point = Box::new(Some(free_point));
+                    self.qeds.edge_mut(e.sym()).point = Box::new(Some(point));
+                }
+                self.free_point = None;
+                self.boundary_edge = Some(e);
+            } else {
+                self.free_point = Some(point);
+            }
+        } else {
+            // TODO: do some proper locating. We iterate through each of the
+            // boundary edges and connect the the point to all edges it lies to
+            // the right of, this should maintain convecity.
+            let mut relevant_edges = Vec::new();
+            for edge in self.boundary().unwrap() {
+                if edge.lies_right(point) {
+                    relevant_edges.push(edge.target());
+                }
+            }
+            // The edges need to be sorted such that their points are in CCW
+            // order around the new point. We can do this by performing a CCW on
+            // the base edge points around the new point.
+            unsafe {
+                self.add_external_point_unordered(relevant_edges, point);
+            }
+            // todo!()
+        }
+    }
+
+    /// Assumes the EdgeTargets have already been put in the correct order.
+    pub unsafe fn add_external_point_ordered(
+        &mut self,
+        boundary_edges: Vec<EdgeTarget>,
+        point: Point,
+    ) {
+        let mut edges = boundary_edges.into_iter();
+        let e = self
+            .qeds
+            .add_external_point(edges.next().unwrap(), point)
+            .1
+            .target;
+        for f in edges {
+            self.qeds.connect(e.sym(), f.sym());
+        }
+    }
+
+    pub unsafe fn add_external_point_unordered(
+        &mut self,
+        mut boundary_edges: Vec<EdgeTarget>,
+        point: Point,
+    ) {
+        // Reorder the edges so that their base points are CCW around the point.
+        boundary_edges.sort_by(|a, b| {
+            let pa = self.qeds.edge_ref(*a).edge().point.unwrap();
+            let pb = self.qeds.edge_ref(*b).edge().point.unwrap();
+            match left_or_right(point, pb, pa) {
+                Direction::Left => std::cmp::Ordering::Less,
+                Direction::Straight => std::cmp::Ordering::Equal,
+                Direction::Right => std::cmp::Ordering::Greater,
+            }
+        });
+        self.add_external_point_ordered(boundary_edges, point);
+    }
+
+    pub fn boundary(&self) -> Option<BoundaryIter> {
+        if let Some(boundary_edge) = self.boundary_edge {
+            Some(BoundaryIter::new(&self.qeds, boundary_edge))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct BoundaryIter<'a> {
+    qeds: &'a Qeds,
+    next_edge: Option<EdgeRef<'a>>,
+    first_edge_target: EdgeTarget,
+}
+
+impl<'a> BoundaryIter<'a> {
+    fn new(qeds: &'a Qeds, initial_boundary_edge: EdgeTarget) -> Self {
+        // let next_edge = unsafe {
+        //     qeds.edge_ref(initial_boundary_edge)
+        // };
+        Self {
+            qeds: qeds,
+            next_edge: None,
+            first_edge_target: initial_boundary_edge,
+        }
+    }
+}
+
+impl<'a> Iterator for BoundaryIter<'a> {
+    type Item = EdgeRef<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_edge = self.next_edge;
+        if let Some(next_edge) = next_edge {
+            if next_edge.target() == self.first_edge_target {
+                None
+            } else {
+                self.next_edge = Some(next_edge.r_prev());
+                Some(next_edge)
+            }
+        } else {
+            // This is the first time that next has been called.
+            let next_edge = unsafe { self.qeds.edge_ref(self.first_edge_target) };
+            self.next_edge = Some(next_edge.r_prev());
+            Some(next_edge)
+        }
+    }
+}
+
 /// This data structure is a single instance of a quad-edge data structure.
 #[derive(Clone, Debug)]
 pub struct Qeds {
@@ -84,7 +218,7 @@ impl Qeds {
         }
     }
 
-    pub fn edge_mut(&mut self, target: EdgeTarget) -> &mut Edge {
+    pub unsafe fn edge_mut(&mut self, target: EdgeTarget) -> &mut Edge {
         &mut self.quads[target.e].edges[target.r as usize]
     }
 
@@ -124,10 +258,17 @@ impl Qeds {
     //     self.splice(e.sym_mut(), e.sym_mut().oprev_mut());
     // }
 
-    pub unsafe fn join(&mut self, edge_a: EdgeRef, edge_b: EdgeRef) {
-        self.splice(edge_a.target, edge_b.target);
-        // TODO: get rid of this clone.
-        self.edge_mut(edge_a.target).point = self.edge(edge_b.target).point.clone();
+    pub unsafe fn add_external_point(
+        &mut self,
+        boundary_edge: EdgeTarget,
+        p: Point,
+    ) -> (EdgeRef, EdgeRef) {
+        let e = self.make_edge().target();
+        self.edge_mut(e).point = Box::new(Some(p));
+        self.edge_mut(e.sym()).point = self.edge_ref(boundary_edge).sym().edge().point.clone();
+        self.splice(e.sym(), boundary_edge.sym());
+        let f = self.connect(boundary_edge.sym(), e).target();
+        (self.edge_ref(f), self.edge_ref(e))
     }
 
     pub fn base_edges(&self) -> BaseEdgeIter {
@@ -220,6 +361,43 @@ impl EdgeRef<'_> {
             }
         }
         Face { edges }
+    }
+
+    pub fn lies_right(&self, point: Point) -> bool {
+        let pa = if let Some(p) = *self.edge().point {
+            p
+        } else {
+            return false;
+        };
+        let pb = if let Some(p) = *self.sym().edge().point {
+            p
+        } else {
+            return false;
+        };
+        left_or_right(pa, pb, point) == Direction::Right
+    }
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Direction {
+    Left,
+    Straight,
+    Right,
+}
+
+pub fn left_or_right(
+    Point { x: x1, y: y1 }: Point,
+    Point { x: x2, y: y2 }: Point,
+    Point { x: x3, y: y3 }: Point,
+) -> Direction {
+    use Direction::*;
+    let determinant = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+    if determinant > 0.0 {
+        Left
+    } else if determinant == 0.0 {
+        Straight
+    } else {
+        Right
     }
 }
 
@@ -322,10 +500,14 @@ pub trait AsEdgeRef: Sized + Copy {
     }
 
     #[inline(always)]
+    fn r_prev(&self) -> Self {
+        self.sym().onext()
+    }
+
+    #[inline(always)]
     fn l_next(&self) -> Self {
         self.rot().rot().rot().onext().rot()
     }
-
     fn midpoint(&self) -> Option<Point> {
         let this_point = (*self.edge().point)?;
         let next_point = (*self.sym().edge().point)?;
@@ -385,112 +567,13 @@ pub struct Vertex {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
+// TODO: pub struct Edge<MainData,DualData> or <AData,BData>
 pub struct Edge {
     // / The index of the face to the left of this edge.
     // pub face_index: usize,
     // pub index: usize,
     pub next: EdgeTarget,
     pub point: Box<Option<Point>>,
-}
-
-impl Edge {
-    // /// Rot
-    // #[inline(always)]
-    // pub fn rot(&self) -> &Edge {
-    //     self.offset(1)
-    // }
-
-    // #[inline(always)]
-    // pub fn rot_mut(&mut self) -> &mut Edge {
-    //     self.offset_mut(1)
-    // }
-
-    // #[inline(always)]
-    // pub fn sym(&self) -> &Edge {
-    //     self.offset(2)
-    // }
-
-    // #[inline(always)]
-    // pub fn sym_mut(&mut self) -> &mut Edge {
-    //     self.offset_mut(2)
-    // }
-
-    // #[inline(always)]
-    // pub fn sym_rot(&self) -> &Edge {
-    //     self.offset(3)
-    // }
-
-    // #[inline(always)]
-    // fn offset(&self, offset: isize) -> &Edge {
-    //     let offset1 = (self as *const Edge).align_offset(std::mem::align_of::<Quad>());
-    //     // i is the index in Quad, that is, 0, 1, 2, or 3 (effectively r)
-    //     let i: isize = (4 - offset1 as isize) % 4;
-    //     // d is the offset from the current edge to the edge we want.
-    //     let d = (i + offset) % 4 - i;
-    //     let ptr = (self as *const Edge).wrapping_offset(d);
-    //     unsafe { &*ptr }
-    // }
-
-    // #[inline(always)]
-    // fn offset_mut(&mut self, offset: isize) -> &mut Edge {
-    //     let ptr: *const Edge = self.offset(offset);
-    //     unsafe { &mut *(ptr as *mut Edge) }
-    // }
-
-    // #[inline(always)]
-    // pub fn onext(&self) -> &Edge {
-    //     unsafe { &*self.next }
-    // }
-
-    // #[inline(always)]
-    // pub fn oprev(&self) -> &Edge {
-    //     self.rot().onext().rot()
-    // }
-
-    // #[inline(always)]
-    // pub fn oprev_mut(&mut self) -> &mut Edge {
-    //     self.rot_mut().onext_mut().rot_mut()
-    // }
-
-    // #[inline(always)]
-    // pub fn onext_mut(&mut self) -> &mut Edge {
-    //     unsafe {
-    //         let const_next = self.next as *mut Edge;
-    //         &mut *const_next
-    //     }
-    // }
-
-    // #[inline(always)]
-    // pub fn r_next(&self) -> &Edge {
-    //     self.rot().onext().rot()
-    // }
-
-    // #[inline(always)]
-    // pub fn l_next(&self) -> &Edge {
-    //     self.rot().rot().rot().onext().rot()
-    // }
-
-    // #[inline(always)]
-    // pub fn l_next_mut(&mut self) -> &mut Edge {
-    //     self.rot_mut().rot_mut().rot_mut().onext_mut().rot_mut()
-    // }
-
-    // pub fn l_face(&self) -> Face {
-    //     // Save the next edge of this face so that we know when to end the loop.
-    //     let first_next_edge = self.l_next();
-    //     let mut edges = Vec::new();
-    //     // Loop around collecting the edges.
-    //     let mut current_next_edge = self.l_next();
-    //     loop {
-    //         edges.push(current_next_edge);
-    //         current_next_edge = current_next_edge.l_next();
-    //         // TODO: use
-    //         if std::ptr::eq(current_next_edge, first_next_edge) {
-    //             break;
-    //         }
-    //     }
-    //     Face { edges }
-    // }
 }
 
 #[derive(Clone, Debug)]
@@ -502,42 +585,42 @@ pub struct Face<'a> {
 impl Face<'_> {
     pub fn centroid(&self) -> Option<Point> {
         let signed_area = self.signed_area()?;
-        println!("Signed Area: {:?}", signed_area);
         if signed_area <= 0.0 {
             return None;
         }
         let mut xsum = 0.0;
         let mut ysum = 0.0;
-        for (pa,pb) in self.vertices_pairs() {
-            println!("pa: {:?}, pb: {:?}", pa,pb);
+        for (pa, pb) in self.vertices_pairs() {
             let pa = pa?;
             let pb = pb?;
-            xsum += (pa.x+pb.x)*(pa.x*pb.y-pb.x*pa.y);
-            ysum += (pa.y+pb.y)*(pa.x*pb.y-pb.x*pa.y);
+            xsum += (pa.x + pb.x) * (pa.x * pb.y - pb.x * pa.y);
+            ysum += (pa.y + pb.y) * (pa.x * pb.y - pb.x * pa.y);
         }
         Some(Point {
-            x: xsum/6.0/signed_area,
-            y: ysum/6.0/signed_area,
+            x: xsum / 6.0 / signed_area,
+            y: ysum / 6.0 / signed_area,
         })
     }
 
     pub fn signed_area(&self) -> Option<f64> {
         let mut sum = 0.0;
-        for (pa,pb) in self.vertices_pairs() {
+        for (pa, pb) in self.vertices_pairs() {
             let pa = pa?;
             let pb = pb?;
-            sum += pa.x*pb.y-pb.x*pa.y;
+            sum += pa.x * pb.y - pb.x * pa.y;
         }
-        Some(0.5*sum)
+        Some(0.5 * sum)
     }
     pub fn vertices(&self) -> FaceVerticesIter {
         FaceVerticesIter::new(self)
     }
-    pub fn vertices_pairs(&self) -> std::iter::Zip<FaceVerticesIter<'_>, std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'_>>>> {
+    pub fn vertices_pairs(
+        &self,
+    ) -> std::iter::Zip<FaceVerticesIter<'_>, std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'_>>>>
+    {
         self.vertices().zip(self.vertices().cycle().skip(1))
     }
 }
-
 
 #[derive(Clone, Debug)]
 pub struct FaceVerticesIter<'a> {
@@ -701,11 +784,11 @@ mod tests {
         // Step 2. Add some edges to it.
         let q1 = qeds.make_edge().target;
         println!("q1 Target: {:?}", q1);
-        qeds.edge_mut(q1).point = Box::new(Some(point_a));
-        qeds.edge_mut(q1.sym()).point = Box::new(Some(point_b));
-        let e = &qeds.quads[0].edges[0];
-        // e with sym applied 2 times is the same edge as e
         unsafe {
+            qeds.edge_mut(q1).point = Box::new(Some(point_a));
+            qeds.edge_mut(q1.sym()).point = Box::new(Some(point_b));
+            let e = &qeds.quads[0].edges[0];
+            // e with sym applied 2 times is the same edge as e
             assert_eq!(qeds.edge_ref(q1).edge() as *const Edge, e as *const Edge);
             assert_eq!(qeds.edge_ref(q1).sym().sym().edge(), e);
             // The Org of the edge is a point and it is point_a
@@ -724,7 +807,9 @@ mod tests {
         // Step 2. Add some edges to it.
         let q1 = qeds.make_edge().target;
         let p1 = Point::new(0.0, 0.0);
-        qeds.edge_mut(q1).point = Box::new(Some(p1));
+        unsafe {
+            qeds.edge_mut(q1).point = Box::new(Some(p1));
+        }
         // Step 3. Get the single edge in the data structure.
         // e with Rot applied 2 times is not the same edge as e
         assert_eq!(q1.rot().rot(), q1.sym());
@@ -810,14 +895,14 @@ mod tests {
         let p2 = Point::new(5.0, 0.0);
         let p3 = Point::new(2.5, 5.0);
 
-        qeds.edge_mut(q1).point = Box::new(Some(p1));
-        qeds.edge_mut(q1.sym()).point = Box::new(Some(p2));
-        qeds.edge_mut(q2).point = Box::new(Some(p2));
-        qeds.edge_mut(q2.sym()).point = Box::new(Some(p3));
-
-        // Step 3. Splice those edges together so that we actually have
-        // something of a network.
         unsafe {
+            qeds.edge_mut(q1).point = Box::new(Some(p1));
+            qeds.edge_mut(q1.sym()).point = Box::new(Some(p2));
+            qeds.edge_mut(q2).point = Box::new(Some(p2));
+            qeds.edge_mut(q2.sym()).point = Box::new(Some(p3));
+
+            // Step 3. Splice those edges together so that we actually have
+            // something of a network.
             qeds.splice(q1.sym(), q2);
             assert_eq!(qeds.edge_ref(q1).l_next(), qeds.edge_ref(q2));
             assert_eq!(qeds.edge_ref(q2).onext(), qeds.edge_ref(q1).sym());
@@ -828,9 +913,6 @@ mod tests {
             let q3 = qeds.connect(q2, q1).target;
             assert_eq!(qeds.edge_ref(q2).sym().onext(), qeds.edge_ref(q3));
 
-            // Get the first edge.
-            let quad = qeds.quads.iter().next().unwrap();
-            // let quad: &Quad = unsafe { &**quad };
             let edge = qeds.edge_ref(EdgeTarget::new(0, 0, 0));
             assert_eq!(edge.l_next(), qeds.edge_ref(q2));
             assert_eq!(edge.l_next().l_next(), edge.onext().sym());
@@ -861,7 +943,13 @@ mod tests {
             assert_eq!(face.edges.len(), 3);
             assert_eq!(face.vertices().count(), 3);
 
-            assert_eq!(face.centroid(), Some(Point{x:2.5,y:1.6666666666666665}));
+            assert_eq!(
+                face.centroid(),
+                Some(Point {
+                    x: 2.5,
+                    y: 1.6666666666666665
+                })
+            );
         }
     }
 
