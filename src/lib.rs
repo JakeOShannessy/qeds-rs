@@ -2,15 +2,15 @@ use core::ops::Add;
 use core::ops::Sub;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::ops::Mul;
+use std::{marker::PhantomData, ops::Mul};
 
 pub struct Triangulation {
-    pub qeds: Qeds,
+    pub qeds: Qeds<Box<Option<Point>>,()>,
     pub free_point: Option<Point>,
     pub boundary_edge: Option<EdgeTarget>,
 }
 
-impl Triangulation {
+impl Triangulation where {
     pub fn new() -> Self {
         Self {
             qeds: Qeds::new(),
@@ -90,7 +90,7 @@ impl Triangulation {
         self.add_external_point_ordered(boundary_edges, point);
     }
 
-    pub fn boundary(&self) -> Option<BoundaryIter> {
+    pub fn boundary(&self) -> Option<BoundaryIter<Box<Option<Point>>,()>> {
         if let Some(boundary_edge) = self.boundary_edge {
             Some(BoundaryIter::new(&self.qeds, boundary_edge))
         } else {
@@ -99,14 +99,14 @@ impl Triangulation {
     }
 }
 
-pub struct BoundaryIter<'a> {
-    qeds: &'a Qeds,
-    next_edge: Option<EdgeRef<'a>>,
+pub struct BoundaryIter<'a,AData,BData> {
+    qeds: &'a Qeds<AData,BData>,
+    next_edge: Option<EdgeRef<'a,AData,BData>>,
     first_edge_target: EdgeTarget,
 }
 
-impl<'a> BoundaryIter<'a> {
-    fn new(qeds: &'a Qeds, initial_boundary_edge: EdgeTarget) -> Self {
+impl<'a,AData,BData> BoundaryIter<'a,AData,BData> {
+    fn new(qeds: &'a Qeds<AData,BData>, initial_boundary_edge: EdgeTarget) -> Self {
         // let next_edge = unsafe {
         //     qeds.edge_ref(initial_boundary_edge)
         // };
@@ -118,8 +118,8 @@ impl<'a> BoundaryIter<'a> {
     }
 }
 
-impl<'a> Iterator for BoundaryIter<'a> {
-    type Item = EdgeRef<'a>;
+impl<'a,AData,BData> Iterator for BoundaryIter<'a,AData,BData> {
+    type Item = EdgeRef<'a,AData,BData>;
     fn next(&mut self) -> Option<Self::Item> {
         let next_edge = self.next_edge;
         if let Some(next_edge) = next_edge {
@@ -140,15 +140,15 @@ impl<'a> Iterator for BoundaryIter<'a> {
 
 /// This data structure is a single instance of a quad-edge data structure.
 #[derive(Clone, Debug)]
-pub struct Qeds {
+pub struct Qeds<AData,BData> {
     /// The vector of quads which we index into.
-    pub quads: Vec<Quad>,
+    pub quads: Vec<Quad<AData,BData>>,
     /// The priority queue of "dead" quads in the vector that we can freely
     /// replace.
     pub spaces: BinaryHeap<Reverse<usize>>,
 }
 
-impl Qeds {
+impl<AData,BData> Qeds<AData,BData> {
     /// Create the simplest [`Qeds`] with a single [`Edge`] and a single
     /// [`Face`]. Covers the whole sphere.
     pub fn new() -> Self {
@@ -164,7 +164,7 @@ impl Qeds {
         self.spaces.pop().map(|i| i.0).unwrap_or(self.quads.len())
     }
 
-    fn insert(&mut self, index: usize, quad: Quad) {
+    fn insert(&mut self, index: usize, quad: Quad<AData,BData>) {
         if let Some(elem) = self.quads.get_mut(index) {
             *elem = quad;
         } else {
@@ -173,53 +173,71 @@ impl Qeds {
     }
 
     /// Create an edge in the [`Qeds`].
-    pub fn make_edge(&mut self) -> EdgeRef {
+    pub fn make_edge(&mut self) -> EdgeRef<AData,BData> {
         let this_index: usize = self.take_next_index();
         let quad = Quad {
-            edges: [
+            edges_a: [
                 // The base edge e.
                 Edge {
                     next: EdgeTarget::new(this_index, 0, 0),
                     point: Box::new(None),
-                },
-                // eRot
-                Edge {
-                    next: EdgeTarget::new(this_index, 3, 0),
-                    point: Box::new(None),
+                    phantomA: PhantomData,
+                    phantomB: PhantomData,
                 },
                 // eSym
                 Edge {
                     next: EdgeTarget::new(this_index, 2, 0),
                     point: Box::new(None),
+                    phantomA: PhantomData,
+                    phantomB: PhantomData,
+                },
+            ],
+            edges_b: [
+                // eRot
+                Edge {
+                    next: EdgeTarget::new(this_index, 3, 0),
+                    point: Box::new(None),
+                    phantomA: PhantomData,
+                    phantomB: PhantomData,
                 },
                 // eSymRot
                 Edge {
                     next: EdgeTarget::new(this_index, 1, 0),
                     point: Box::new(None),
+                    phantomA: PhantomData,
+                    phantomB: PhantomData,
                 },
             ],
         };
         self.insert(this_index, quad);
-        let t: &Qeds = self;
+        let t: &Qeds<AData,BData> = self;
         EdgeRef {
             qeds: t,
             target: EdgeTarget::new(this_index, 0, 0),
         }
     }
 
-    pub unsafe fn edge(&self, target: EdgeTarget) -> &Edge {
-        &self.quads[target.e].edges[target.r as usize]
+    pub unsafe fn edge(&self, target: EdgeTarget) -> &Edge<AData,BData> {
+        if target.r == 0 || target.r == 2 {
+            &self.quads[target.e].edges_a[(target.r/2) as usize]
+        } else {
+            &self.quads[target.e].edges_b[(target.r/2) as usize]
+        }
     }
 
-    pub unsafe fn edge_ref(&self, target: EdgeTarget) -> EdgeRef {
+    pub unsafe fn edge_ref(&self, target: EdgeTarget) -> EdgeRef<AData,BData> {
         EdgeRef {
             qeds: &self,
             target,
         }
     }
 
-    pub unsafe fn edge_mut(&mut self, target: EdgeTarget) -> &mut Edge {
-        &mut self.quads[target.e].edges[target.r as usize]
+    pub unsafe fn edge_mut(&mut self, target: EdgeTarget) -> &mut Edge<AData,BData> {
+        if target.r == 0 || target.r == 2 {
+            &mut self.quads[target.e].edges_a[(target.r/2) as usize]
+        } else {
+            &mut self.quads[target.e].edges_b[(target.r/2) as usize]
+        }
     }
 
     pub unsafe fn splice(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) {
@@ -237,7 +255,7 @@ impl Qeds {
     }
 
     /// Connect the Org of a with the Dest of b by creating a new edge.
-    pub fn connect(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRef {
+    pub fn connect(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRef<AData,BData> {
         // First, make the new edge.
         let q_target = self.make_edge().target;
         unsafe {
@@ -262,7 +280,7 @@ impl Qeds {
         &mut self,
         boundary_edge: EdgeTarget,
         p: Point,
-    ) -> (EdgeRef, EdgeRef) {
+    ) -> (EdgeRef<AData,BData>, EdgeRef<AData,BData>) {
         let e = self.make_edge().target();
         self.edge_mut(e).point = Box::new(Some(p));
         self.edge_mut(e.sym()).point = self.edge_ref(boundary_edge).sym().edge().point.clone();
@@ -271,19 +289,19 @@ impl Qeds {
         (self.edge_ref(f), self.edge_ref(e))
     }
 
-    pub fn base_edges(&self) -> BaseEdgeIter {
+    pub fn base_edges(&self) -> BaseEdgeIter<AData,BData> {
         BaseEdgeIter::new(self)
     }
 }
 
-pub struct BaseEdgeIter<'a> {
-    qeds: &'a Qeds,
+pub struct BaseEdgeIter<'a,AData,BData> {
+    qeds: &'a Qeds<AData,BData>,
     next_index: usize,
     spaces: std::collections::BinaryHeap<Reverse<usize>>,
 }
 
-impl<'a> BaseEdgeIter<'a> {
-    fn new(qeds: &'a Qeds) -> Self {
+impl<'a,AData,BData> BaseEdgeIter<'a,AData,BData> {
+    fn new(qeds: &'a Qeds<AData,BData>) -> Self {
         Self {
             qeds: qeds,
             next_index: 0,
@@ -292,8 +310,8 @@ impl<'a> BaseEdgeIter<'a> {
     }
 }
 
-impl<'a> Iterator for BaseEdgeIter<'a> {
-    type Item = EdgeRef<'a>;
+impl<'a,AData,BData> Iterator for BaseEdgeIter<'a,AData,BData> {
+    type Item = EdgeRef<'a,AData,BData>;
     fn next(&mut self) -> Option<Self::Item> {
         let index = loop {
             let next_space = self.spaces.peek().cloned();
@@ -319,20 +337,98 @@ impl<'a> Iterator for BaseEdgeIter<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-pub struct Quad {
-    pub edges: [Edge; 4],
+pub struct Quad<AData,BData> {
+    pub edges_a: [Edge<AData,BData>; 2],
+    pub edges_b: [Edge<AData,BData>; 2],
 }
 
-impl Quad {}
-
-#[derive(Copy, Clone, Debug)]
-pub struct EdgeRef<'a> {
-    pub qeds: &'a Qeds,
+#[derive(Debug)]
+pub struct EdgeRef<'a,AData,BData> {
+    pub qeds: &'a Qeds<AData,BData>,
     pub target: EdgeTarget,
 }
 
-impl EdgeRef<'_> {
-    pub fn l_face(&self) -> Face {
+impl<'a,AData,BData> Clone for EdgeRef<'a,AData,BData> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<'a,AData,BData> Copy for EdgeRef<'a,AData,BData> {}
+
+impl<AData,BData> EdgeRef<'_,AData,BData> {
+    pub fn qeds(&self) -> &Qeds<AData,BData> {
+        self.qeds
+    }
+    pub fn target(&self) -> EdgeTarget {
+        self.target
+    }
+    pub fn target_mut(&mut self) -> &mut EdgeTarget {
+        &mut self.target
+    }
+    pub fn edge(&self) -> &Edge<AData,BData> {
+        // We know we can use this unsafe because lifetime gurantee that the
+        // Qeds data structure has not been modified since this EdgeRef was
+        // created.
+        unsafe { self.qeds().edge(self.target()) }
+    }
+
+    #[inline(always)]
+    pub fn offset_r(&self, offset: u8) -> Self {
+        let mut q = self.clone();
+        let new_target = q.target().offset_r(offset);
+        *q.target_mut() = new_target;
+        q
+    }
+
+    #[inline(always)]
+    pub fn onext(&self) -> Self {
+        let edge = self.edge();
+        let mut q = self.clone();
+        *q.target_mut() = edge.next;
+        q
+    }
+
+    /// Rot
+    #[inline(always)]
+    pub fn rot(&self) -> Self {
+        self.offset_r(1)
+    }
+
+    #[inline(always)]
+    pub fn sym(&self) -> Self {
+        self.offset_r(2)
+    }
+
+    #[inline(always)]
+    pub fn sym_rot(&self) -> Self {
+        self.offset_r(3)
+    }
+
+    #[inline(always)]
+    pub fn oprev(&self) -> Self {
+        self.rot().onext().rot()
+    }
+
+    #[inline(always)]
+    pub fn r_next(&self) -> Self {
+        self.rot().onext().rot().rot().rot()
+    }
+
+    #[inline(always)]
+    pub fn r_prev(&self) -> Self {
+        self.sym().onext()
+    }
+
+    #[inline(always)]
+    pub fn l_next(&self) -> Self {
+        self.rot().rot().rot().onext().rot()
+    }
+    pub fn midpoint(&self) -> Option<Point> {
+        let this_point = (*self.edge().point)?;
+        let next_point = (*self.sym().edge().point)?;
+        Some(this_point.midpoint(next_point))
+    }
+    pub fn l_face(&self) -> Face<AData,BData> {
         // Save the next edge of this face so that we know when to end the loop.
         let first_next_edge = self.l_next();
         let mut edges = Vec::new();
@@ -347,7 +443,7 @@ impl EdgeRef<'_> {
         }
         Face { edges }
     }
-    pub fn r_face(&self) -> Face {
+    pub fn r_face(&self) -> Face<AData,BData> {
         // Save the next edge of this face so that we know when to end the loop.
         let first_next_edge = self.r_next();
         let mut edges = Vec::new();
@@ -401,125 +497,16 @@ pub fn left_or_right(
     }
 }
 
-impl AsEdgeRef for EdgeRef<'_> {
-    fn qeds(&self) -> &Qeds {
-        self.qeds
-    }
-    fn target(&self) -> EdgeTarget {
-        self.target
-    }
-    fn target_mut(&mut self) -> &mut EdgeTarget {
-        &mut self.target
-    }
-}
-
-impl PartialEq for EdgeRef<'_> {
+impl<AData,BData> PartialEq for EdgeRef<'_,AData,BData> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.qeds, other.qeds) && self.target == other.target
     }
 }
 
-impl Eq for EdgeRef<'_> {}
-
-#[derive(Debug)]
-pub struct EdgeRefMut<'a> {
-    pub qeds: &'a mut Qeds,
-    pub target: EdgeTarget,
-}
-
-// impl AsEdgeRef for EdgeRefMut<'_> {
-//     fn qeds(&self) -> &Qeds {
-//         self.qeds
-//     }
-//     fn target(&self) -> EdgeTarget {
-//         self.target
-//     }
-//     fn target_mut(&mut self) -> &mut EdgeTarget {
-//         &mut self.target
-//     }
-// }
-
-impl PartialEq for EdgeRefMut<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.qeds, other.qeds) && self.target == other.target
-    }
-}
-
-impl Eq for EdgeRefMut<'_> {}
-
-pub trait AsEdgeRef: Sized + Copy {
-    fn qeds(&self) -> &Qeds;
-    fn target(&self) -> EdgeTarget;
-    fn target_mut(&mut self) -> &mut EdgeTarget;
-    fn edge(&self) -> &Edge {
-        // We know we can use this unsafe because lifetime gurantee that the
-        // Qeds data structure has not been modified since this EdgeRef was
-        // created.
-        unsafe { self.qeds().edge(self.target()) }
-    }
-
-    #[inline(always)]
-    fn offset_r(&self, offset: u8) -> Self {
-        let mut q = self.clone();
-        *q.target_mut() = q.target().offset_r(offset);
-        q
-    }
-
-    #[inline(always)]
-    fn onext(&self) -> Self {
-        let edge = self.edge();
-        let mut q = self.clone();
-        *q.target_mut() = edge.next;
-        q
-    }
-
-    /// Rot
-    #[inline(always)]
-    fn rot(&self) -> Self {
-        self.offset_r(1)
-    }
-
-    #[inline(always)]
-    fn sym(&self) -> Self {
-        self.offset_r(2)
-    }
-
-    #[inline(always)]
-    fn sym_rot(&self) -> Self {
-        self.offset_r(3)
-    }
-
-    #[inline(always)]
-    fn oprev(&self) -> Self {
-        self.rot().onext().rot()
-    }
-
-    #[inline(always)]
-    fn r_next(&self) -> Self {
-        self.rot().onext().rot().rot().rot()
-    }
-
-    #[inline(always)]
-    fn r_prev(&self) -> Self {
-        self.sym().onext()
-    }
-
-    #[inline(always)]
-    fn l_next(&self) -> Self {
-        self.rot().rot().rot().onext().rot()
-    }
-    fn midpoint(&self) -> Option<Point> {
-        let this_point = (*self.edge().point)?;
-        let next_point = (*self.sym().edge().point)?;
-        Some(this_point.midpoint(next_point))
-    }
-}
+impl<AData,BData> Eq for EdgeRef<'_,AData,BData> {}
 
 // r and f can fit in one byte. If we limit the size of qeds we could fit it in
 // the edge index.
-
-impl<'a> EdgeRef<'a> {}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EdgeTarget {
     // The index of the Quad in the Qeds.
@@ -567,22 +554,23 @@ pub struct Vertex {
 }
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-// TODO: pub struct Edge<MainData,DualData> or <AData,BData>
-pub struct Edge {
+pub struct Edge<AData,BData> {
     // / The index of the face to the left of this edge.
     // pub face_index: usize,
     // pub index: usize,
     pub next: EdgeTarget,
     pub point: Box<Option<Point>>,
+    phantomA: PhantomData<AData>,
+    phantomB: PhantomData<BData>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Face<'a> {
+pub struct Face<'a,AData,BData> {
     /// An index to any of the CCW oriented edges surrounding this face.
-    pub edges: Vec<EdgeRef<'a>>,
+    pub edges: Vec<EdgeRef<'a,AData,BData>>,
 }
 
-impl Face<'_> {
+impl<AData:Clone,BData:Clone> Face<'_,AData,BData> {
     pub fn centroid(&self) -> Option<Point> {
         let signed_area = self.signed_area()?;
         if signed_area <= 0.0 {
@@ -611,25 +599,25 @@ impl Face<'_> {
         }
         Some(0.5 * sum)
     }
-    pub fn vertices(&self) -> FaceVerticesIter {
+    pub fn vertices(&self) -> FaceVerticesIter<AData,BData> {
         FaceVerticesIter::new(self)
     }
     pub fn vertices_pairs(
         &self,
-    ) -> std::iter::Zip<FaceVerticesIter<'_>, std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'_>>>>
+    ) -> std::iter::Zip<FaceVerticesIter<'_,AData,BData>, std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'_,AData,BData>>>>
     {
         self.vertices().zip(self.vertices().cycle().skip(1))
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct FaceVerticesIter<'a> {
-    face: &'a Face<'a>,
+pub struct FaceVerticesIter<'a,AData,BData> {
+    face: &'a Face<'a,AData,BData>,
     next_index: usize,
 }
 
-impl<'a> FaceVerticesIter<'a> {
-    fn new(face: &'a Face) -> Self {
+impl<'a,AData,BData> FaceVerticesIter<'a,AData,BData> {
+    fn new(face: &'a Face<'a,AData,BData>) -> Self {
         Self {
             face,
             next_index: 0,
@@ -637,7 +625,7 @@ impl<'a> FaceVerticesIter<'a> {
     }
 }
 
-impl<'a> Iterator for FaceVerticesIter<'a> {
+impl<'a,AData,BData> Iterator for FaceVerticesIter<'a,AData,BData> {
     type Item = Option<Point>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_index >= self.face.edges.len() {
@@ -719,7 +707,7 @@ mod tests {
     #[test]
     fn e1() {
         // Step 1. Create a Qeds data structure.
-        let mut qeds = Qeds::new();
+        let mut qeds: Qeds<(),()> = Qeds::new();
         // Step 2. Add some edges to it.
         let e = qeds.make_edge();
         // e with Rot applied 4 times is the same edge as e
@@ -736,14 +724,14 @@ mod tests {
         // Step 3. Get the single edge in the data structure.
         // e with Rot applied 2 times is not the same edge as e
         assert_eq!(
-            e.rot().rot().edge() as *const Edge,
-            e.sym().edge() as *const Edge
+            e.rot().rot().edge() as *const Edge<(),()>,
+            e.sym().edge() as *const Edge<(),()>
         );
         assert_eq!(
-            e.rot().sym().edge() as *const Edge,
-            e.sym().rot().edge() as *const Edge
+            e.rot().sym().edge() as *const Edge<(),()>,
+            e.sym().rot().edge() as *const Edge<(),()>
         );
-        assert_eq!(e.onext().edge() as *const Edge, e.edge() as *const Edge);
+        assert_eq!(e.onext().edge() as *const Edge<(),()>, e.edge() as *const Edge<(),()>);
     }
 
     /// Test the basic relationships of a quad that should always be true for an
@@ -757,28 +745,28 @@ mod tests {
         // Step 3. Get the single edge in the data structure.
         // e with Rot applied 2 times is not the same edge as e
         assert_eq!(
-            e.rot().rot().edge() as *const Edge,
-            e.sym().edge() as *const Edge
+            e.rot().rot().edge() as *const Edge<(),()>,
+            e.sym().edge() as *const Edge<(),()>
         );
         assert_eq!(
-            e.rot().sym().edge() as *const Edge,
-            e.sym().rot().edge() as *const Edge
+            e.rot().sym().edge() as *const Edge<(),()>,
+            e.sym().rot().edge() as *const Edge<(),()>
         );
-        assert_eq!(e.onext().edge() as *const Edge, e.edge() as *const Edge);
+        assert_eq!(e.onext().edge() as *const Edge<(),()>, e.edge() as *const Edge<(),()>);
         assert_eq!(
-            e.sym().onext().edge() as *const Edge,
-            e.sym().edge() as *const Edge
+            e.sym().onext().edge() as *const Edge<(),()>,
+            e.sym().edge() as *const Edge<(),()>
         );
         assert_eq!(
-            e.rot().onext().edge() as *const Edge,
-            e.rot().sym().edge() as *const Edge
+            e.rot().onext().edge() as *const Edge<(),()>,
+            e.rot().sym().edge() as *const Edge<(),()>
         );
     }
 
     #[test]
     fn segment() {
         // Step 1. Create a Qeds data structure.
-        let mut qeds = Qeds::new();
+        let mut qeds: Qeds<Box<Option<Point>>,()> = Qeds::new();
         let point_a = Point::new(0.0, 0.0);
         let point_b = Point::new(5.0, 0.0);
         // Step 2. Add some edges to it.
@@ -787,9 +775,9 @@ mod tests {
         unsafe {
             qeds.edge_mut(q1).point = Box::new(Some(point_a));
             qeds.edge_mut(q1.sym()).point = Box::new(Some(point_b));
-            let e = &qeds.quads[0].edges[0];
+            let e = &qeds.quads[0].edges_a[0];
             // e with sym applied 2 times is the same edge as e
-            assert_eq!(qeds.edge_ref(q1).edge() as *const Edge, e as *const Edge);
+            assert_eq!(qeds.edge_ref(q1).edge() as *const Edge<Box<Option<Point>>,()>, e as *const Edge<Box<Option<Point>>,()>);
             assert_eq!(qeds.edge_ref(q1).sym().sym().edge(), e);
             // The Org of the edge is a point and it is point_a
             assert_eq!(*qeds.edge_ref(q1).edge().point, Some(point_a));
@@ -803,7 +791,7 @@ mod tests {
     #[test]
     fn rot2_eq_sym() {
         // Step 1. Create a Qeds data structure.
-        let mut qeds = Qeds::new();
+        let mut qeds: Qeds<Box<Option<Point>>,()> = Qeds::new();
         // Step 2. Add some edges to it.
         let q1 = qeds.make_edge().target;
         let p1 = Point::new(0.0, 0.0);
@@ -820,31 +808,31 @@ mod tests {
         let mut qeds = Qeds::new();
         let q1 = qeds.make_edge().target;
         let q1 = unsafe { qeds.edge_ref(q1) };
-        assert_eq!(q1.rot().edge(), &qeds.quads[0].edges[1]);
-        assert_eq!(q1.sym().edge(), &qeds.quads[0].edges[2]);
-        assert_eq!(q1.sym().rot().edge(), &qeds.quads[0].edges[3]);
+        assert_eq!(q1.rot().edge(), &qeds.quads[0].edges_b[0]);
+        assert_eq!(q1.sym().edge(), &qeds.quads[0].edges_a[1]);
+        assert_eq!(q1.sym().rot().edge(), &qeds.quads[0].edges_b[1]);
         assert_eq!(
-            q1.rot().sym().edge() as *const Edge,
-            &qeds.quads[0].edges[3] as *const Edge
+            q1.rot().sym().edge() as *const Edge<(),()>,
+            &qeds.quads[0].edges_b[1] as *const Edge<(),()>
         );
         assert_eq!(
-            q1.rot().onext().edge() as *const Edge,
-            q1.rot().sym().edge() as *const Edge
+            q1.rot().onext().edge() as *const Edge<(),()>,
+            q1.rot().sym().edge() as *const Edge<(),()>
         );
         assert_eq!(
-            q1.rot().sym().onext().edge() as *const Edge,
-            q1.rot().edge() as *const Edge
+            q1.rot().sym().onext().edge() as *const Edge<(),()>,
+            q1.rot().edge() as *const Edge<(),()>
         );
         assert_eq!(
-            q1.onext().edge() as *const Edge,
-            &qeds.quads[0].edges[0] as *const Edge
+            q1.onext().edge() as *const Edge<(),()>,
+            &qeds.quads[0].edges_a[0] as *const Edge<(),()>
         );
     }
 
     #[test]
     fn splice_test() {
         // Step 1. Create a Qeds data structure.
-        let mut qeds = Qeds::new();
+        let mut qeds: Qeds<(),()> = Qeds::new();
         // Step 2. Add the first two edges. Converting them into references as
         // it is the more useful format for testing.
         let q1 = qeds.make_edge().target;
@@ -870,7 +858,7 @@ mod tests {
     #[test]
     fn simple_triangle() {
         // Step 1. Create a Qeds data structure.
-        let mut qeds = Qeds::new();
+        let mut qeds: Qeds<Box<Option<Point>>,()> = Qeds::new();
         // Step 2. Add some edges to it.
         let a = qeds.make_edge().target;
         let b = qeds.make_edge().target;
@@ -885,7 +873,7 @@ mod tests {
     #[test]
     fn triangle_face() {
         // Step 1. Create a Qeds data structure.
-        let mut qeds = Qeds::new();
+        let mut qeds: Qeds<Box<Option<Point>>,()> = Qeds::new();
         // Step 2. Add some edges to it.
         let q1 = qeds.make_edge().target;
         let q2 = qeds.make_edge().target;
@@ -1036,25 +1024,25 @@ mod tests {
 
             println!(
                 "Edge1[{:?}]: {:?} -> {:?}",
-                edge.edge() as *const Edge,
+                edge.edge() as *const Edge<Box<Option<Point>>,()>,
                 edge.edge().point,
                 edge.sym().edge().point
             );
             println!(
                 "Edge2[{:?}]: {:?} -> {:?}",
-                edge.l_next().edge() as *const Edge,
+                edge.l_next().edge() as *const Edge<Box<Option<Point>>,()>,
                 edge.l_next().edge().point,
                 edge.l_next().sym().edge().point
             );
             println!(
                 "Edge3[{:?}]: {:?} -> {:?}",
-                edge.l_next().l_next().edge() as *const Edge,
+                edge.l_next().l_next().edge() as *const Edge<Box<Option<Point>>,()>,
                 edge.l_next().l_next().edge().point,
                 edge.l_next().l_next().sym().edge().point
             );
             println!(
                 "Edge4[{:?}]: {:?} -> {:?}",
-                edge.l_next().l_next().l_next().edge() as *const Edge,
+                edge.l_next().l_next().l_next().edge() as *const Edge<Box<Option<Point>>,()>,
                 edge.l_next().l_next().l_next().edge().point,
                 edge.l_next().l_next().l_next().sym().edge().point
             );
