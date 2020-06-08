@@ -1,8 +1,13 @@
 use core::ops::Add;
 use core::ops::Sub;
+use nalgebra::Matrix4;
 use slab::Slab;
-use std::ops::Mul;
+use std::{
+    fmt::{Display, Formatter},
+    ops::Mul,
+};
 
+/// A Qeds data structure specialised to a 2d triangulation.
 pub struct Triangulation {
     pub qeds: Qeds<Point, ()>,
     pub free_point: Option<Point>,
@@ -39,13 +44,37 @@ impl Triangulation {
                     relevant_edges.push(edge.target());
                 }
             }
-            // The edges need to be sorted such that their points are in CCW
-            // order around the new point. We can do this by performing a CCW on
-            // the base edge points around the new point.
-            unsafe {
-                self.add_external_point_unordered(relevant_edges, point);
+            // If there are no relevant edges then it must be collinear. In this
+            // case we simply want to join it to the closest point.
+            // TODO: we must also consider if the point lies _on_ another line.
+            if relevant_edges.len() == 0 {
+                let (closest_point_target, closest_point) = {
+                    // Initially assume that the closest point is the Org point of
+                    // the first boundary edge.
+                    let mut closest_point =
+                        unsafe { self.qeds.edge_a_ref(self.boundary_edge.unwrap()) };
+                    for edge in self.boundary().unwrap() {
+                        if point.distance(edge.edge().point)
+                            < point.distance(closest_point.edge().point)
+                        {
+                            closest_point = edge;
+                        }
+                    }
+                    (closest_point.target(), closest_point.edge().point)
+                };
+                let e = self.qeds.make_edge_with_a(closest_point, point).target();
+                unsafe {
+                    self.qeds.splice(closest_point_target, e);
+                }
+            // todo!("Haven't considered the collinear case");
+            } else {
+                // The edges need to be sorted such that their points are in CCW
+                // order around the new point. We can do this by performing a CCW on
+                // the base edge points around the new point.
+                unsafe {
+                    self.add_external_point_unordered(relevant_edges, point);
+                }
             }
-            // todo!()
         }
     }
 
@@ -109,6 +138,74 @@ impl Triangulation {
         let f = self.qeds.connect(boundary_edge.sym(), e).target();
         (self.qeds.edge_a_ref(f), self.qeds.edge_a_ref(e))
     }
+
+    /// Determine whether an Edge (i.e. two NavTris) satisfies the Delaunay
+    /// criterion. An edge with only a single NavTri will return True.
+    unsafe fn del_test(&self, e: EdgeTarget) -> bool {
+        // Get the edge.
+        let edge = self.qeds.edge_a_ref(e);
+        // Get all of the vertices around this egdge in a CCW order.
+        let a = edge.oprev().edge().point;
+        let b = edge.r_prev().sym().edge().point;
+        let c = edge.l_next().edge().point;
+        let d = edge.onext().sym().edge().point;
+        del_test_ccw(a, b, c, d)
+    }
+
+    // TODO: remove this
+    pub fn retriangulate_all(&mut self) {
+        let edge_targets: Vec<EdgeTarget> =
+            self.qeds.base_edges().map(|edge| edge.target()).collect();
+        for e in edge_targets.into_iter() {
+            unsafe {
+                if self.del_test(e) {
+                    self.swap(e);
+                }
+            }
+        }
+    }
+
+    pub unsafe fn swap(&mut self, e: EdgeTarget) {
+        let edge = self.qeds.edge_a_ref(e);
+        let a = edge.oprev().target();
+        let a_dest = edge.oprev().sym().edge().point;
+        let a_lnext = edge.oprev().l_next().target();
+        let b = edge.sym().oprev().target();
+        let b_dest = edge.sym().oprev().sym().edge().point;
+        let b_lnext = edge.sym().oprev().l_next().target();
+        drop(edge);
+        self.qeds.splice(e, a);
+        self.qeds.splice(e.sym(), b);
+        self.qeds.splice(e, a_lnext);
+        self.qeds.splice(e.sym(), b_lnext);
+        self.qeds.edge_a_mut(e).point = a_dest;
+        self.qeds.edge_a_mut(e.sym()).point = b_dest;
+
+    }
+}
+
+/// Determine whether a set of 4 points satisfies the Delaunay criterion. This
+/// assumes that the pointes are sorted in a CCW fashion.
+fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
+    let matrix: Matrix4<f64> = Matrix4::new(
+        a.x,
+        a.y,
+        a.x.powi(2) + a.y.powi(2),
+        1.0,
+        b.x,
+        b.y,
+        b.x.powi(2) + b.y.powi(2),
+        1.0,
+        c.x,
+        c.y,
+        c.x.powi(2) + c.y.powi(2),
+        1.0,
+        d.x,
+        d.y,
+        d.x.powi(2) + d.y.powi(2),
+        1.0,
+    );
+    matrix.determinant() > 0.0
 }
 
 pub struct BoundaryIter<'a, AData, BData> {
@@ -331,11 +428,15 @@ impl<AData, BData> Qeds<AData, BData> {
         self.edge_mut(beta).set_next(ta);
     }
 
-    // pub unsafe fn delete(&mut self, e: &mut Edge) {
-    //     // TODO: we don't actually free the memory here.
-    //     self.splice(e, e.oprev_mut());
-    //     self.splice(e.sym_mut(), e.sym_mut().oprev_mut());
-    // }
+    pub unsafe fn delete(&mut self, e: EdgeTarget) {
+        let edge = self.edge_ref(e);
+        let oprev = edge.oprev().target();
+        let sym_oprev = edge.sym().oprev().target();
+        self.splice(e, oprev);
+        self.splice(e.sym(), sym_oprev);
+        // TODO: verify that this is correct
+        self.quads.remove(e.e);
+    }
 
     pub fn base_edges(&self) -> BaseEdgeIter<AData, BData> {
         BaseEdgeIter::new(self)
@@ -943,6 +1044,16 @@ impl Point {
 
     pub fn is_finite(&self) -> bool {
         self.x.is_finite() && self.y.is_finite()
+    }
+
+    pub fn distance(&self, other: Self) -> f64 {
+        ((other.x - self.x).powi(2) + (other.y - self.y).powi(2)).sqrt()
+    }
+}
+
+impl Display for Point {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "({},{})", self.x, self.y)
     }
 }
 
