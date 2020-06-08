@@ -3,6 +3,7 @@ use core::ops::Sub;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::{marker::PhantomData, ops::Mul};
+use slab::Slab;
 
 pub struct Triangulation {
     pub qeds: Qeds<Box<Option<Point>>,()>,
@@ -62,14 +63,16 @@ impl Triangulation where {
         point: Point,
     ) {
         let mut edges = boundary_edges.into_iter();
-        let e = self
+        let (g,e) = {
+            let (a,b) = self
             .qeds
-            .add_external_point(edges.next().unwrap(), point)
-            .1
-            .target;
+            .add_external_point(edges.next().unwrap(), point);
+            (a.target(),b.target())
+        };
         for f in edges {
             self.qeds.connect(e.sym(), f.sym());
         }
+        self.boundary_edge = Some(g);
     }
 
     pub unsafe fn add_external_point_unordered(
@@ -142,10 +145,7 @@ impl<'a,AData,BData> Iterator for BoundaryIter<'a,AData,BData> {
 #[derive(Clone, Debug)]
 pub struct Qeds<AData,BData> {
     /// The vector of quads which we index into.
-    pub quads: Vec<Quad<AData,BData>>,
-    /// The priority queue of "dead" quads in the vector that we can freely
-    /// replace.
-    pub spaces: BinaryHeap<Reverse<usize>>,
+    pub quads: Slab<Quad<AData,BData>>,
 }
 
 impl<AData,BData> Qeds<AData,BData> {
@@ -153,43 +153,34 @@ impl<AData,BData> Qeds<AData,BData> {
     /// [`Face`]. Covers the whole sphere.
     pub fn new() -> Self {
         Self {
-            quads: Vec::new(),
-            spaces: BinaryHeap::new(),
+            quads: Slab::new(),
         }
     }
 
-    fn take_next_index(&mut self) -> usize {
-        // If there are any empty spaces in the list, use the smallest of those.
-        // Otherwise it's simply the length of the vector.
-        self.spaces.pop().map(|i| i.0).unwrap_or(self.quads.len())
-    }
-
-    fn insert(&mut self, index: usize, quad: Quad<AData,BData>) {
-        if let Some(elem) = self.quads.get_mut(index) {
-            *elem = quad;
-        } else {
-            self.quads.push(quad);
-        }
+    fn insert(&mut self, quad: Quad<AData,BData>) -> EdgeTarget {
+        let index = self.quads.insert(quad);
+        EdgeTarget::new(index,0,0)
     }
 
     /// Create an edge in the [`Qeds`].
     pub fn make_edge(&mut self) -> EdgeRef<AData,BData> {
-        let this_index: usize = self.take_next_index();
+        let entry = self.quads.vacant_entry();
+        let this_index = entry.key();
         let quad = Quad {
             edges_a: [
                 // The base edge e.
                 Edge {
                     next: EdgeTarget::new(this_index, 0, 0),
                     point: Box::new(None),
-                    phantomA: PhantomData,
-                    phantomB: PhantomData,
+                    phantom_a: PhantomData,
+                    phantom_b: PhantomData,
                 },
                 // eSym
                 Edge {
                     next: EdgeTarget::new(this_index, 2, 0),
                     point: Box::new(None),
-                    phantomA: PhantomData,
-                    phantomB: PhantomData,
+                    phantom_a: PhantomData,
+                    phantom_b: PhantomData,
                 },
             ],
             edges_b: [
@@ -197,19 +188,19 @@ impl<AData,BData> Qeds<AData,BData> {
                 Edge {
                     next: EdgeTarget::new(this_index, 3, 0),
                     point: Box::new(None),
-                    phantomA: PhantomData,
-                    phantomB: PhantomData,
+                    phantom_a: PhantomData,
+                    phantom_b: PhantomData,
                 },
                 // eSymRot
                 Edge {
                     next: EdgeTarget::new(this_index, 1, 0),
                     point: Box::new(None),
-                    phantomA: PhantomData,
-                    phantomB: PhantomData,
+                    phantom_a: PhantomData,
+                    phantom_b: PhantomData,
                 },
             ],
         };
-        self.insert(this_index, quad);
+        entry.insert(quad);
         let t: &Qeds<AData,BData> = self;
         EdgeRef {
             qeds: t,
@@ -296,16 +287,14 @@ impl<AData,BData> Qeds<AData,BData> {
 
 pub struct BaseEdgeIter<'a,AData,BData> {
     qeds: &'a Qeds<AData,BData>,
-    next_index: usize,
-    spaces: std::collections::BinaryHeap<Reverse<usize>>,
+    quad_iter: slab::Iter<'a,Quad<AData,BData>>,
 }
 
 impl<'a,AData,BData> BaseEdgeIter<'a,AData,BData> {
     fn new(qeds: &'a Qeds<AData,BData>) -> Self {
         Self {
             qeds: qeds,
-            next_index: 0,
-            spaces: qeds.spaces.clone(),
+            quad_iter: qeds.quads.iter(),
         }
     }
 }
@@ -313,25 +302,9 @@ impl<'a,AData,BData> BaseEdgeIter<'a,AData,BData> {
 impl<'a,AData,BData> Iterator for BaseEdgeIter<'a,AData,BData> {
     type Item = EdgeRef<'a,AData,BData>;
     fn next(&mut self) -> Option<Self::Item> {
-        let index = loop {
-            let next_space = self.spaces.peek().cloned();
-            if let Some(next_space) = next_space {
-                if self.next_index < next_space.0 {
-                    break self.next_index;
-                } else {
-                    self.spaces.pop();
-                    self.next_index = next_space.0 + 1;
-                    continue;
-                }
-            } else {
-                break self.next_index;
-            }
-        };
-        self.next_index += 1;
-        if index < self.qeds.quads.len() {
-            unsafe { Some(self.qeds.edge_ref(EdgeTarget::new(index, 0, 0))) }
-        } else {
-            None
+        let quad = self.quad_iter.next()?;
+        unsafe {
+            Some(self.qeds.edge_ref(EdgeTarget::new(quad.0,0,0)))
         }
     }
 }
@@ -560,8 +533,8 @@ pub struct Edge<AData,BData> {
     // pub index: usize,
     pub next: EdgeTarget,
     pub point: Box<Option<Point>>,
-    phantomA: PhantomData<AData>,
-    phantomB: PhantomData<BData>,
+    phantom_a: PhantomData<AData>,
+    phantom_b: PhantomData<BData>,
 }
 
 #[derive(Clone, Debug)]
