@@ -281,10 +281,8 @@ impl<AData,BData> Qeds<AData,BData> {
     }
 
     pub unsafe fn splice(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) {
-        println!("Splicing: {:?} and {:?}", edge_a, edge_b);
         let alpha = self.edge_ref(edge_a).onext().rot().target;
         let beta = self.edge_ref(edge_b).onext().rot().target;
-        println!("created alpha and beta");
 
         // We want to swap aOnext with bOnext and αOnext with βONext
         let ta = self.edge_ref(edge_a).onext().target;
