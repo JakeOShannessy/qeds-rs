@@ -7,137 +7,181 @@ use std::{
     ops::Mul,
 };
 
+#[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
 pub struct Triangulation {
-    pub qeds: Qeds<Point, ()>,
-    pub free_point: Option<Point>,
-    pub boundary_edge: Option<EdgeTarget>,
+    /// The quad-edge data structure we use as the basis for the triangulation.
+    pub qeds: Qeds<Point, TriKey>,
+    /// A list of triangles in the triangulation (with bounds). This is used for
+    /// locating points in the triangulation. This needs to be kept in sync with
+    /// the qeds.
+    pub tris: Slab<Triangle>
 }
+
+type TriKey = usize;
+const NULL_TRI_KEY: TriKey = std::usize::MAX;
 
 impl Triangulation {
     pub fn new() -> Self {
         Self {
             qeds: Qeds::new(),
-            free_point: None,
-            boundary_edge: None,
+            tris: Slab::new(),
         }
+    }
+
+    // TODO: we need to be able to locate on an edge etc.
+    pub fn locate(&self, point: Point) -> Vec<Triangle> {
+        // Iterate through all the triangles and return the keys that overlap
+        // with this point.
+        // TODO: we can use a small vec optimisation here.
+        let mut tris = Vec::new();
+        for (i, tri) in self.tris.iter() {
+            if point.x >= tri.min.x && point.x <= tri.max.x && point.y >= tri.min.y && point.y <= tri.max.y {
+                tris.push(*tri);
+            }
+        }
+        tris
     }
 
     pub fn add_point(&mut self, point: Point) {
         // TODO: consider: points lying on other points, on lines, and within triangles.
         if self.qeds.quads.len() == 0 {
-            // If there are no points, we can just add a free-floating point.
-            if let Some(free_point) = self.free_point {
-                let e = self.qeds.make_edge_with_a(free_point, point).target();
-                self.free_point = None;
-                self.boundary_edge = Some(e);
-            } else {
-                self.free_point = Some(point);
+            // If there are no edges, we can just add a point with cardinal
+            // edges to infinity.
+            let inf_north = Point::new(point.x,std::f64::INFINITY);
+            let inf_south = Point::new(point.x,std::f64::NEG_INFINITY);
+            let inf_east = Point::new(std::f64::INFINITY,point.y);
+            let inf_west = Point::new(std::f64::NEG_INFINITY, point.y);
+
+            let north_west_tri_entry = self.tris.vacant_entry();
+            let north_west_tri_entry_key = north_west_tri_entry.key();
+            let e_north = self.qeds.make_edge_with_ab(point, inf_north,north_west_tri_entry.key(), NULL_TRI_KEY).target();
+            north_west_tri_entry.insert(Triangle {min: Point::new(std::f64::NEG_INFINITY,point.y), max:Point::new(point.x,std::f64::INFINITY), target: e_north});
+
+            let north_east_tri_entry = self.tris.vacant_entry();
+            let north_east_tri_entry_key = north_east_tri_entry.key();
+            let e_east = self.qeds.make_edge_with_ab(point, inf_east, north_east_tri_entry.key(), NULL_TRI_KEY).target();
+            north_east_tri_entry.insert(Triangle { min: point, max: Point::new(std::f64::INFINITY,std::f64::INFINITY), target: e_east});
+
+            let south_west_tri_entry = self.tris.vacant_entry();
+            let south_west_tri_entry_key = south_west_tri_entry.key();
+            let e_west = self.qeds.make_edge_with_ab(point, inf_west, south_west_tri_entry.key(), north_west_tri_entry_key).target();
+            south_west_tri_entry.insert(Triangle {min: Point::new(std::f64::NEG_INFINITY,std::f64::NEG_INFINITY), max: point, target: e_west});
+
+            let south_east_tri_entry = self.tris.vacant_entry();
+            let south_east_tri_entry_key = south_east_tri_entry.key();
+            let e_south = self.qeds.make_edge_with_ab(point, inf_south, south_east_tri_entry.key(), south_west_tri_entry_key).target();
+            south_east_tri_entry.insert(Triangle {min: Point::new(point.x,std::f64::NEG_INFINITY), max: Point::new(std::f64::INFINITY,point.y), target: e_south});
+
+            unsafe {
+                // The the tri keys that we were unable to set before.
+                self.qeds.edge_b_mut(e_north.rot().sym()).point = north_east_tri_entry_key;
+                self.qeds.edge_b_mut(e_east.rot().sym()).point = south_east_tri_entry_key;
+                // Splice the finite ends together. Splicing means new triangles
+                // so we need to do some bounds updating. We can just keep a
+                // list of affected edges and update all the bounds in one go.
+                self.qeds.splice(e_north, e_south); self.qeds.splice(e_north.sym(), e_south.sym());
+                self.qeds.splice(e_west,  e_north); self.qeds.splice(e_west.sym(),  e_north.sym());
+                self.qeds.splice(e_east,  e_south); self.qeds.splice(e_east.sym(),  e_south.sym());
+                // Connect the infinite edges.
+                self.qeds.connect(e_east, e_north.sym());
+                self.qeds.connect(e_north, e_west.sym());
+                self.qeds.connect(e_west, e_south.sym());
+                self.qeds.connect(e_south, e_east.sym());
             }
         } else {
-            // TODO: do some proper locating. We iterate through each of the
-            // boundary edges and connect the the point to all edges it lies to
-            // the right of, this should maintain convecity.
-            let mut relevant_edges = Vec::new();
-            for edge in self.boundary().unwrap() {
-                if edge.lies_right(point) {
-                    relevant_edges.push(edge.target());
-                }
-            }
-            // If there are no relevant edges then it must be collinear. In this
-            // case we simply want to join it to the closest point.
-            // TODO: we must also consider if the point lies _on_ another line.
-            if relevant_edges.len() == 0 {
-                let (closest_point_target, closest_point) = {
-                    // Initially assume that the closest point is the Org point of
-                    // the first boundary edge.
-                    let mut closest_point =
-                        unsafe { self.qeds.edge_a_ref(self.boundary_edge.unwrap()) };
-                    for edge in self.boundary().unwrap() {
-                        if point.distance(edge.edge().point)
-                            < point.distance(closest_point.edge().point)
-                        {
-                            closest_point = edge;
+            // There are already edges in the triangulation, we know there must
+            // be at least the original 4.
+            let tris = self.locate(point);
+            if tris.len() == 1 {
+                let tri: Triangle = tris[0];
+                // The point is in the left face of the edge pointed to by
+                // edge_target.
+                let mut edge_target = tri.target;
+                unsafe {
+                    let first = self.qeds.edge_a_ref(edge_target).edge().point;
+                    println!("First: {}", first);
+                    println!("FirstDest: {}", self.qeds.edge_a_ref(edge_target).sym().edge().point);
+                    let mut base = self.qeds.make_edge_with_ab(first, point, NULL_TRI_KEY, NULL_TRI_KEY).target();
+                    self.qeds.splice(edge_target, base.sym());
+                    loop {
+                        let base_ref = self.qeds.connect(edge_target, base.sym());
+                        edge_target = base_ref.oprev().target();
+                        base = base_ref.target();
+                        println!("self.qeds.edge_a(edge_target.sym()).point: {}", self.qeds.edge_a(edge_target.sym()).point);
+                        if self.qeds.edge_a(edge_target.sym()).point == first {
+                            break;
                         }
                     }
-                    (closest_point.target(), closest_point.edge().point)
-                };
-                let e = self.qeds.make_edge_with_a(closest_point, point).target();
-                unsafe {
-                    self.qeds.splice(closest_point_target, e);
+                    edge_target = self.qeds.edge_a_ref(base).oprev().target();
+                    // TODO: perform swapping
                 }
-            // todo!("Haven't considered the collinear case");
             } else {
-                // The edges need to be sorted such that their points are in CCW
-                // order around the new point. We can do this by performing a CCW on
-                // the base edge points around the new point.
-                unsafe {
-                    self.add_external_point_unordered(relevant_edges, point);
-                }
+                todo!();
             }
         }
     }
 
-    /// Assumes the EdgeTargets have already been put in the correct order.
-    pub unsafe fn add_external_point_ordered(
-        &mut self,
-        boundary_edges: Vec<EdgeTarget>,
-        point: Point,
-    ) {
-        let mut edges = boundary_edges.into_iter();
-        let (g, e) = {
-            let (a, b) = self.add_external_point(edges.next().unwrap(), point);
-            (a.target(), b.target())
-        };
-        for f in edges {
-            self.qeds.connect(e.sym(), f.sym());
-        }
-        self.boundary_edge = Some(g);
-    }
+    // /// Assumes the EdgeTargets have already been put in the correct order.
+    // pub unsafe fn add_external_point_ordered(
+    //     &mut self,
+    //     boundary_edges: Vec<EdgeTarget>,
+    //     point: Point,
+    // ) {
+    //     let mut edges = boundary_edges.into_iter();
+    //     let (g, e) = {
+    //         let (a, b) = self.add_external_point(edges.next().unwrap(), point);
+    //         (a.target(), b.target())
+    //     };
+    //     for f in edges {
+    //         self.qeds.connect(e.sym(), f.sym());
+    //     }
+    //     self.boundary_edge = Some(g);
+    // }
 
-    pub unsafe fn add_external_point_unordered(
-        &mut self,
-        mut boundary_edges: Vec<EdgeTarget>,
-        point: Point,
-    ) {
-        // Reorder the edges so that their base points are CCW around the point.
-        boundary_edges.sort_by(|a, b| {
-            let pa = self.qeds.edge_a_ref(*a).edge().point;
-            let pb = self.qeds.edge_a_ref(*b).edge().point;
-            match left_or_right(point, pb, pa) {
-                Direction::Left => std::cmp::Ordering::Less,
-                Direction::Straight => std::cmp::Ordering::Equal,
-                Direction::Right => std::cmp::Ordering::Greater,
-            }
-        });
-        self.add_external_point_ordered(boundary_edges, point);
-    }
+    // pub unsafe fn add_external_point_unordered(
+    //     &mut self,
+    //     mut boundary_edges: Vec<EdgeTarget>,
+    //     point: Point,
+    // ) {
+    //     // Reorder the edges so that their base points are CCW around the point.
+    //     boundary_edges.sort_by(|a, b| {
+    //         let pa = self.qeds.edge_a_ref(*a).edge().point;
+    //         let pb = self.qeds.edge_a_ref(*b).edge().point;
+    //         match left_or_right(point, pb, pa) {
+    //             Direction::Left => std::cmp::Ordering::Less,
+    //             Direction::Straight => std::cmp::Ordering::Equal,
+    //             Direction::Right => std::cmp::Ordering::Greater,
+    //         }
+    //     });
+    //     self.add_external_point_ordered(boundary_edges, point);
+    // }
 
-    pub fn boundary(&self) -> Option<BoundaryIter<Point, ()>> {
-        if let Some(boundary_edge) = self.boundary_edge {
-            Some(BoundaryIter::new(&self.qeds, boundary_edge))
-        } else {
-            None
-        }
-    }
+    // pub fn boundary(&self) -> Option<BoundaryIter<Point, ()>> {
+    //     if let Some(boundary_edge) = self.boundary_edge {
+    //         Some(BoundaryIter::new(&self.qeds, boundary_edge))
+    //     } else {
+    //         None
+    //     }
+    // }
 
-    pub unsafe fn add_external_point(
-        &mut self,
-        boundary_edge: EdgeTarget,
-        p: Point,
-    ) -> (EdgeRefA<Point, ()>, EdgeRefA<Point, ()>) {
-        let dest = self
-            .qeds
-            .edge_a_ref(boundary_edge)
-            .sym()
-            .edge()
-            .point
-            .clone();
-        let e = self.qeds.make_edge_with_a(p, dest).target();
-        self.qeds.splice(e.sym(), boundary_edge.sym());
-        let f = self.qeds.connect(boundary_edge.sym(), e).target();
-        (self.qeds.edge_a_ref(f), self.qeds.edge_a_ref(e))
-    }
+    // pub unsafe fn add_external_point(
+    //     &mut self,
+    //     boundary_edge: EdgeTarget,
+    //     p: Point,
+    // ) -> (EdgeRefA<Point, ()>, EdgeRefA<Point, ()>) {
+    //     let dest = self
+    //         .qeds
+    //         .edge_a_ref(boundary_edge)
+    //         .sym()
+    //         .edge()
+    //         .point
+    //         .clone();
+    //     let e = self.qeds.make_edge_with_a(p, dest).target();
+    //     self.qeds.splice(e.sym(), boundary_edge.sym());
+    //     let f = self.qeds.connect(boundary_edge.sym(), e).target();
+    //     (self.qeds.edge_a_ref(f), self.qeds.edge_a_ref(e))
+    // }
 
     /// Determine whether an Edge (i.e. two NavTris) satisfies the Delaunay
     /// criterion. An edge with only a single NavTri will return True.
@@ -182,6 +226,29 @@ impl Triangulation {
         self.qeds.edge_a_mut(e.sym()).point = b_dest;
 
     }
+
+    // /// If at any point the boundary loops back on itself, we know it to be
+    // /// linear. Technically it only shows that one edge is, but one of our
+    // /// invariant is that only one linear edge is not possible.
+    // pub fn is_linear(&self) -> bool {
+    //     for edge in self.boundary().unwrap() {
+    //         if edge.sym().onext() == edge.sym() {
+    //             return true;
+    //         }
+    //     }
+    //     false
+    // }
+}
+
+#[derive(Copy, Clone, Debug, PartialOrd, PartialEq)]
+pub struct Triangle {
+    /// The minimum bounding point.
+    pub min: Point,
+    /// The maximum bounding point.
+    pub max: Point,
+    /// An edge target which lies on the triangle. It can be any one of the
+    /// three that make up the triangle.
+    pub target: EdgeTarget,
 }
 
 /// Determine whether a set of 4 points satisfies the Delaunay criterion. This
@@ -334,8 +401,50 @@ impl<AData, BData: Default> Qeds<AData, BData> {
     }
 }
 
+
+impl<AData, BData> Qeds<AData, BData> {
+    /// Create an edge in the [`Qeds`].
+    pub fn make_edge_with_ab(&mut self, a_org: AData, a_dest: AData, b_org: BData, b_dest: BData) -> EdgeRefA<AData, BData> {
+        let entry = self.quads.vacant_entry();
+        let this_index = entry.key();
+        let quad = Quad {
+            edges_a: [
+                // The base edge e.
+                Edge {
+                    next: EdgeTarget::new(this_index, 0, 0),
+                    point: a_org,
+                },
+                // eSym
+                Edge {
+                    next: EdgeTarget::new(this_index, 2, 0),
+                    point: a_dest,
+                },
+            ],
+            edges_b: [
+                // eRot
+                Edge {
+                    next: EdgeTarget::new(this_index, 3, 0),
+                    point: b_org,
+                },
+                // eSymRot
+                Edge {
+                    next: EdgeTarget::new(this_index, 1, 0),
+                    point: b_dest,
+                },
+            ],
+        };
+        entry.insert(quad);
+        let t: &Qeds<AData, BData> = self;
+        EdgeRefA {
+            qeds: t,
+            target: EdgeTarget::new(this_index, 0, 0),
+        }
+    }
+}
+
 impl<AData: Clone, BData: Default> Qeds<AData, BData> {
-    /// Connect the Org of a with the Dest of b by creating a new edge.
+    /// Connect the Org of a with the Dest of b by creating a new edge. TODO: we
+    /// need to special case infinite edges.
     pub fn connect(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRefA<AData, BData> {
         unsafe {
             // First, make the new edge.
@@ -1095,6 +1204,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bad_collinear() {
+        let b = Point::new(-10000.0,-1.0);
+        let c = Point::new(-9000.0,-1.0);
+        let d = Point::new(std::f64::MIN,-1.0-std::f64::EPSILON);
+        let p = Point::new(10000.0,-1.0);
+        // This is a problem as it means we can have a triangle with both sides
+        // collinear with another point. This indicates that our collinearity
+        // test is insufficient.
+        assert_ne!(b,d);
+        assert_eq!(left_or_right(b, c, p), Direction::Straight);
+        assert_eq!(left_or_right(d, c, p), Direction::Straight);
+    }
+
+    #[test]
     fn targetting() {
         let t = EdgeTarget::new(0, 0, 0);
         assert_eq!(t.offset_r(2), EdgeTarget::new(0, 2, 0));
@@ -1256,7 +1379,7 @@ mod tests {
     }
 
     #[test]
-    fn simple_triangle() {
+    fn single_splice() {
         // Step 1. Create a Qeds data structure.
         let mut qeds: Qeds<(), ()> = Qeds::new();
         // Step 2. Add some edges to it.
@@ -1333,6 +1456,89 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn point_triangulation() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        triangulation.add_point(p1);
+        assert_eq!(triangulation.qeds.quads.len(), 8);
+    }
+
+    #[test]
+    fn point_triangulation_location() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        triangulation.add_point(p1);
+        {
+            // North-East
+            let tris = triangulation.locate(Point::new(1.0,1.0));
+            assert_eq!(tris.len(), 1);
+            assert_eq!(tris[0].min, p1);
+            assert_eq!(tris[0].max, Point::new(std::f64::INFINITY,std::f64::INFINITY));
+        }
+        {
+            // North-West
+            let tris = triangulation.locate(Point::new(-1.0,1.0));
+            assert_eq!(tris.len(), 1);
+            assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,p1.y));
+            assert_eq!(tris[0].max, Point::new(p1.x,std::f64::INFINITY));
+        }
+        {
+            // South-East
+            let tris = triangulation.locate(Point::new(1.0,-1.0));
+            assert_eq!(tris.len(), 1);
+            assert_eq!(tris[0].min, Point::new(p1.x,std::f64::NEG_INFINITY));
+            assert_eq!(tris[0].max, Point::new(std::f64::INFINITY, p1.y));
+        }
+        {
+            // South-West
+            let tris = triangulation.locate(Point::new(-1.0,-1.0));
+            assert_eq!(tris.len(), 1);
+            assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,std::f64::NEG_INFINITY));
+            assert_eq!(tris[0].max, p1);
+        }
+    }
+
+
+    #[test]
+    fn two_point_triangulation() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(1.0, 1.0);
+        triangulation.add_point(p1);
+        for (i, edge) in triangulation.qeds.base_edges().enumerate() {
+            println!("Edge[{}]: {}-{}", i, edge.edge().point, edge.sym().edge().point);
+        }
+        triangulation.add_point(p2);
+        println!("Triangulation: {:?}", triangulation);
+        for (i, edge) in triangulation.qeds.base_edges().enumerate() {
+            println!("Edge[{}]: {}-{}", i, edge.edge().point, edge.sym().edge().point);
+        }
+        assert_eq!(triangulation.qeds.quads.len(), 11);
+    }
+
+    #[test]
+    fn triangle_triangulation() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(5.0, 0.0);
+        let p3 = Point::new(2.5, 5.0);
+        triangulation.add_point(p1);
+        triangulation.add_point(p2);
+        triangulation.add_point(p3);
+    }
+
+    #[test]
+    fn line_triangulation() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(5.0, 0.0);
+        let p3 = Point::new(7.0, 0.0);
+        triangulation.add_point(p1);
+        triangulation.add_point(p2);
+        // triangulation.add_point(p3);
     }
 
     // #[ignore]
