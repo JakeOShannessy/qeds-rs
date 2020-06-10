@@ -11,36 +11,36 @@ use std::{
 /// A Qeds data structure specialised to a 2d triangulation.
 pub struct Triangulation {
     /// The quad-edge data structure we use as the basis for the triangulation.
-    pub qeds: Qeds<Point, TriKey>,
-    /// A list of triangles in the triangulation (with bounds). This is used for
-    /// locating points in the triangulation. This needs to be kept in sync with
-    /// the qeds.
-    pub tris: Slab<Triangle>
+    pub qeds: Qeds<Point, ()>,
 }
-
-type TriKey = usize;
-const NULL_TRI_KEY: TriKey = std::usize::MAX;
 
 impl Triangulation {
     pub fn new() -> Self {
-        Self {
-            qeds: Qeds::new(),
-            tris: Slab::new(),
-        }
+        Self { qeds: Qeds::new() }
+    }
+
+    pub fn some_edge_a(&self) -> Option<EdgeRefA<Point, ()>> {
+        let (i, _) = self.qeds.quads.iter().next()?;
+        unsafe { Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0))) }
     }
 
     // TODO: we need to be able to locate on an edge etc.
-    pub fn locate(&self, point: Point) -> Vec<Triangle> {
-        // Iterate through all the triangles and return the keys that overlap
-        // with this point.
-        // TODO: we can use a small vec optimisation here.
-        let mut tris = Vec::new();
-        for (i, tri) in self.tris.iter() {
-            if point.x >= tri.min.x && point.x <= tri.max.x && point.y >= tri.min.y && point.y <= tri.max.y {
-                tris.push(*tri);
+    // TODO: This has not yet been proved to be stable. It may also loop inifintely
+    pub fn locate(&self, point: Point) -> EdgeRefA<Point, ()> {
+        let mut e = self.some_edge_a().unwrap();
+        loop {
+            if point == e.edge().point || point == e.sym().edge().point {
+                return e;
+            } else if e.lies_right(point) {
+                e = e.sym();
+            } else if !e.onext().lies_right(point) {
+                e = e.onext();
+            } else if !e.d_prev().lies_right(point) {
+                e = e.d_prev();
+            } else {
+                return e;
             }
         }
-        tris
     }
 
     pub fn add_point(&mut self, point: Point) {
@@ -48,41 +48,24 @@ impl Triangulation {
         if self.qeds.quads.len() == 0 {
             // If there are no edges, we can just add a point with cardinal
             // edges to infinity.
-            let inf_north = Point::new(point.x,std::f64::INFINITY);
-            let inf_south = Point::new(point.x,std::f64::NEG_INFINITY);
-            let inf_east = Point::new(std::f64::INFINITY,point.y);
+            let inf_north = Point::new(point.x, std::f64::INFINITY);
+            let inf_south = Point::new(point.x, std::f64::NEG_INFINITY);
+            let inf_east = Point::new(std::f64::INFINITY, point.y);
             let inf_west = Point::new(std::f64::NEG_INFINITY, point.y);
 
-            let north_west_tri_entry = self.tris.vacant_entry();
-            let north_west_tri_entry_key = north_west_tri_entry.key();
-            let e_north = self.qeds.make_edge_with_ab(point, inf_north,north_west_tri_entry.key(), NULL_TRI_KEY).target();
-            north_west_tri_entry.insert(Triangle {min: Point::new(std::f64::NEG_INFINITY,point.y), max:Point::new(point.x,std::f64::INFINITY), target: e_north});
-
-            let north_east_tri_entry = self.tris.vacant_entry();
-            let north_east_tri_entry_key = north_east_tri_entry.key();
-            let e_east = self.qeds.make_edge_with_ab(point, inf_east, north_east_tri_entry.key(), NULL_TRI_KEY).target();
-            north_east_tri_entry.insert(Triangle { min: point, max: Point::new(std::f64::INFINITY,std::f64::INFINITY), target: e_east});
-
-            let south_west_tri_entry = self.tris.vacant_entry();
-            let south_west_tri_entry_key = south_west_tri_entry.key();
-            let e_west = self.qeds.make_edge_with_ab(point, inf_west, south_west_tri_entry.key(), north_west_tri_entry_key).target();
-            south_west_tri_entry.insert(Triangle {min: Point::new(std::f64::NEG_INFINITY,std::f64::NEG_INFINITY), max: point, target: e_west});
-
-            let south_east_tri_entry = self.tris.vacant_entry();
-            let south_east_tri_entry_key = south_east_tri_entry.key();
-            let e_south = self.qeds.make_edge_with_ab(point, inf_south, south_east_tri_entry.key(), south_west_tri_entry_key).target();
-            south_east_tri_entry.insert(Triangle {min: Point::new(point.x,std::f64::NEG_INFINITY), max: Point::new(std::f64::INFINITY,point.y), target: e_south});
+            let e_north = self.qeds.make_edge_with_a(point, inf_north).target();
+            let e_east = self.qeds.make_edge_with_a(point, inf_east).target();
+            let e_west = self.qeds.make_edge_with_a(point, inf_west).target();
+            let e_south = self.qeds.make_edge_with_a(point, inf_south).target();
 
             unsafe {
-                // The the tri keys that we were unable to set before.
-                self.qeds.edge_b_mut(e_north.rot().sym()).point = north_east_tri_entry_key;
-                self.qeds.edge_b_mut(e_east.rot().sym()).point = south_east_tri_entry_key;
-                // Splice the finite ends together. Splicing means new triangles
-                // so we need to do some bounds updating. We can just keep a
-                // list of affected edges and update all the bounds in one go.
-                self.qeds.splice(e_north, e_south); self.qeds.splice(e_north.sym(), e_south.sym());
-                self.qeds.splice(e_west,  e_north); self.qeds.splice(e_west.sym(),  e_north.sym());
-                self.qeds.splice(e_east,  e_south); self.qeds.splice(e_east.sym(),  e_south.sym());
+                // Splice the finite ends together.
+                self.qeds.splice(e_north, e_south);
+                self.qeds.splice(e_north.sym(), e_south.sym());
+                self.qeds.splice(e_west, e_north);
+                self.qeds.splice(e_west.sym(), e_north.sym());
+                self.qeds.splice(e_east, e_south);
+                self.qeds.splice(e_east.sym(), e_south.sym());
                 // Connect the infinite edges.
                 self.qeds.connect(e_east, e_north.sym());
                 self.qeds.connect(e_north, e_west.sym());
@@ -92,33 +75,35 @@ impl Triangulation {
         } else {
             // There are already edges in the triangulation, we know there must
             // be at least the original 4.
-            let tris = self.locate(point);
-            if tris.len() == 1 {
-                let tri: Triangle = tris[0];
-                // The point is in the left face of the edge pointed to by
-                // edge_target.
-                let mut edge_target = tri.target;
-                unsafe {
-                    let first = self.qeds.edge_a_ref(edge_target).edge().point;
-                    println!("First: {}", first);
-                    println!("FirstDest: {}", self.qeds.edge_a_ref(edge_target).sym().edge().point);
-                    let mut base = self.qeds.make_edge_with_ab(first, point, NULL_TRI_KEY, NULL_TRI_KEY).target();
-                    self.qeds.splice(edge_target, base.sym());
-                    loop {
-                        let base_ref = self.qeds.connect(edge_target, base.sym());
-                        edge_target = base_ref.oprev().target();
-                        base = base_ref.target();
-                        println!("self.qeds.edge_a(edge_target.sym()).point: {}", self.qeds.edge_a(edge_target.sym()).point);
-                        if self.qeds.edge_a(edge_target.sym()).point == first {
-                            break;
-                        }
-                    }
-                    edge_target = self.qeds.edge_a_ref(base).oprev().target();
-                    // TODO: perform swapping
+            let edge_target = self.locate(point).target();
+            self.add_to_l_face(edge_target, point);
+        }
+    }
+
+    fn add_to_l_face(&mut self, mut edge_target: EdgeTarget, point: Point) {
+        unsafe {
+            let first = self.qeds.edge_a_ref(edge_target).edge().point;
+            println!("First: {}", first);
+            println!(
+                "FirstDest: {}",
+                self.qeds.edge_a_ref(edge_target).sym().edge().point
+            );
+            let mut base = self.qeds.make_edge_with_a(first, point).target();
+            self.qeds.splice(edge_target, base.sym());
+            loop {
+                let base_ref = self.qeds.connect(edge_target, base.sym());
+                edge_target = base_ref.oprev().target();
+                base = base_ref.target();
+                println!(
+                    "self.qeds.edge_a(edge_target.sym()).point: {}",
+                    self.qeds.edge_a(edge_target.sym()).point
+                );
+                if self.qeds.edge_a(edge_target.sym()).point == first {
+                    break;
                 }
-            } else {
-                todo!();
             }
+            edge_target = self.qeds.edge_a_ref(base).oprev().target();
+            // TODO: perform swapping
         }
     }
 
@@ -224,7 +209,6 @@ impl Triangulation {
         self.qeds.splice(e.sym(), b_lnext);
         self.qeds.edge_a_mut(e).point = a_dest;
         self.qeds.edge_a_mut(e.sym()).point = b_dest;
-
     }
 
     // /// If at any point the boundary loops back on itself, we know it to be
@@ -401,10 +385,15 @@ impl<AData, BData: Default> Qeds<AData, BData> {
     }
 }
 
-
 impl<AData, BData> Qeds<AData, BData> {
     /// Create an edge in the [`Qeds`].
-    pub fn make_edge_with_ab(&mut self, a_org: AData, a_dest: AData, b_org: BData, b_dest: BData) -> EdgeRefA<AData, BData> {
+    pub fn make_edge_with_ab(
+        &mut self,
+        a_org: AData,
+        a_dest: AData,
+        b_org: BData,
+        b_dest: BData,
+    ) -> EdgeRefA<AData, BData> {
         let entry = self.quads.vacant_entry();
         let this_index = entry.key();
         let quad = Quad {
@@ -688,11 +677,65 @@ impl<'a, BData> EdgeRefA<'a, Point, BData> {
         let next_point = self.sym().edge().point;
         this_point.midpoint(next_point)
     }
+
     pub fn lies_right(&self, point: Point) -> bool {
         let pa = self.edge().point;
         let pb = self.sym().edge().point;
-        left_or_right(pa, pb, point) == Direction::Right
+        // We have special treatment of infinite edges.
+        if !pa.is_finite() && !pb.is_finite() {
+            if pa.x == std::f64::INFINITY && pb.y ==std::f64::INFINITY {
+                // CCW
+                false
+            } else if pa.y == std::f64::INFINITY && pb.x ==std::f64::NEG_INFINITY {
+                // CCW
+                false
+            } else if pa.x == std::f64::NEG_INFINITY && pb.y ==std::f64::NEG_INFINITY {
+                // CCW
+                false
+            } else if pa.y == std::f64::NEG_INFINITY && pb.x ==std::f64::INFINITY {
+                // CCW
+                false
+            } else {
+                // asssuming CW
+                true
+            }
+        } else if pa.x.is_finite() {
+            point.y > pb.y
+        } else if pb.x.is_finite() {
+            point.y < pa.y
+        } else if pa.y.is_finite() {
+            point.x > pb.x
+        } else if pb.y.is_finite() {
+            point.x < pa.x
+        } else {
+            left_or_right(pa, pb, point) == Direction::Right
+        }
     }
+}
+
+pub enum LineClassification {
+    CCWInfinite,
+    CWInfinite,
+    Finite,
+}
+
+pub fn classify_segment(pa: Point, pb: Point) -> LineClassification {
+    use LineClassification::*;
+    const INF: f64 = std::f64::INFINITY;
+    const NEG_INF: f64 = std::f64::NEG_INFINITY;
+    if pa.is_finite() && pb.is_finite() {
+        Finite
+    } else {
+        todo!()
+    }
+    // match (pa.x,pa.y,pb.x,pb.y) {
+    //     (inf,_,_,inf) => CCWInfinite,
+    //     (_,inf,neg_inf,_) => CCWInfinite,
+    //     (neg_inf,_,_,neg_inf,) => CCWInfinite,
+    //     (_,neg_inf,inf,_) => CCWInfinite,
+
+    //     _ => Finite
+    // }
 }
 
 impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
@@ -726,6 +769,16 @@ impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
         let mut q = self.clone();
         *q.target_mut() = edge.next;
         q
+    }
+
+    #[inline(always)]
+    pub fn d_prev(&self) -> Self {
+        self.inv_rot().onext().inv_rot()
+    }
+
+    #[inline(always)]
+    pub fn inv_rot(&self) -> EdgeRefB<'a, AData, BData> {
+        self.rot().rot().rot()
     }
 
     /// Rot
@@ -889,6 +942,11 @@ impl<'a, AData, BData> EdgeRefB<'a, AData, BData> {
     #[inline(always)]
     pub fn l_next(&self) -> Self {
         self.rot().rot().rot().onext().rot()
+    }
+
+    #[inline(always)]
+    pub fn inv_rot(&self) -> EdgeRefA<'a, AData, BData> {
+        self.rot().rot().rot()
     }
 
     pub fn l_face(&self) -> FaceB<AData, BData> {
@@ -1205,14 +1263,14 @@ mod tests {
 
     #[test]
     fn bad_collinear() {
-        let b = Point::new(-10000.0,-1.0);
-        let c = Point::new(-9000.0,-1.0);
-        let d = Point::new(std::f64::MIN,-1.0-std::f64::EPSILON);
-        let p = Point::new(10000.0,-1.0);
+        let b = Point::new(-10000.0, -1.0);
+        let c = Point::new(-9000.0, -1.0);
+        let d = Point::new(std::f64::MIN, -1.0 - std::f64::EPSILON);
+        let p = Point::new(10000.0, -1.0);
         // This is a problem as it means we can have a triangle with both sides
         // collinear with another point. This indicates that our collinearity
         // test is insufficient.
-        assert_ne!(b,d);
+        assert_ne!(b, d);
         assert_eq!(left_or_right(b, c, p), Direction::Straight);
         assert_eq!(left_or_right(d, c, p), Direction::Straight);
     }
@@ -1458,49 +1516,80 @@ mod tests {
         }
     }
 
-    #[test]
-    fn point_triangulation() {
-        let mut triangulation = Triangulation::new();
-        let p1 = Point::new(0.0, 0.0);
-        triangulation.add_point(p1);
-        assert_eq!(triangulation.qeds.quads.len(), 8);
+    fn has_edge(triangulation: &Triangulation, pa: Point, pb:Point) -> bool {
+        get_edge(triangulation, pa, pb).is_some()
+    }
+
+    fn get_edge(triangulation: &Triangulation, pa: Point, pb:Point) -> Option<EdgeRefA<'_,Point,()>> {
+        for (i, quad) in triangulation.qeds.quads.iter() {
+            let edge1 = quad.edges_a[0].point;
+            let edge2 = quad.edges_a[1].point;
+            let edge_target = if edge1 == pa && edge2 == pb {
+                EdgeTarget::new(i,0,0)
+            } else if edge1 == pb && edge2 == pa {
+                EdgeTarget::new(i,2,0)
+            } else {
+                continue;
+            };
+            return Some(unsafe{triangulation.qeds.edge_a_ref(edge_target)});
+        }
+        None
     }
 
     #[test]
-    fn point_triangulation_location() {
+    fn one_point_triangulation() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        triangulation.add_point(p1);
+        assert_eq!(triangulation.qeds.quads.len(), 8, "wrong number of quads");
+        // Test that it has all four of the correct edges
+        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(0.0,std::f64::INFINITY)), "missing north edge");
+        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(0.0,std::f64::NEG_INFINITY)), "missing south edge");
+        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(std::f64::INFINITY,0.0)), "missing east edge");
+        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(std::f64::NEG_INFINITY,0.0)), "missing west edge");
+        let north_edge = get_edge(&triangulation, Point::new(0.0,0.0), Point::new(0.0,std::f64::INFINITY)).unwrap();
+
+        assert_eq!(north_edge.edge().point, Point::new(0.0,0.0));
+        assert_eq!(north_edge.sym().edge().point, Point::new(0.0,std::f64::INFINITY));
+
+        assert_eq!(north_edge.sym().onext().edge().point, Point::new(0.0,std::f64::INFINITY));
+        assert_eq!(north_edge.sym().onext().sym().edge().point, Point::new(std::f64::INFINITY,0.0));
+    }
+
+    #[test]
+    fn one_point_triangulation_location() {
         let mut triangulation = Triangulation::new();
         let p1 = Point::new(0.0, 0.0);
         triangulation.add_point(p1);
         {
             // North-East
-            let tris = triangulation.locate(Point::new(1.0,1.0));
-            assert_eq!(tris.len(), 1);
-            assert_eq!(tris[0].min, p1);
-            assert_eq!(tris[0].max, Point::new(std::f64::INFINITY,std::f64::INFINITY));
+            let edge = triangulation.locate(Point::new(1.0, 1.0));
+            // assert_eq!(edge.);
+            // assert_eq!(tris[0].min, p1);
+            // assert_eq!(tris[0].max, Point::new(std::f64::INFINITY,std::f64::INFINITY));
         }
         {
             // North-West
-            let tris = triangulation.locate(Point::new(-1.0,1.0));
-            assert_eq!(tris.len(), 1);
-            assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,p1.y));
-            assert_eq!(tris[0].max, Point::new(p1.x,std::f64::INFINITY));
+            let tris = triangulation.locate(Point::new(-1.0, 1.0));
+            // assert_eq!(tris.len(), 1);
+            // assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,p1.y));
+            // assert_eq!(tris[0].max, Point::new(p1.x,std::f64::INFINITY));
         }
         {
             // South-East
-            let tris = triangulation.locate(Point::new(1.0,-1.0));
-            assert_eq!(tris.len(), 1);
-            assert_eq!(tris[0].min, Point::new(p1.x,std::f64::NEG_INFINITY));
-            assert_eq!(tris[0].max, Point::new(std::f64::INFINITY, p1.y));
+            let tris = triangulation.locate(Point::new(1.0, -1.0));
+            // assert_eq!(tris.len(), 1);
+            // assert_eq!(tris[0].min, Point::new(p1.x,std::f64::NEG_INFINITY));
+            // assert_eq!(tris[0].max, Point::new(std::f64::INFINITY, p1.y));
         }
         {
             // South-West
-            let tris = triangulation.locate(Point::new(-1.0,-1.0));
-            assert_eq!(tris.len(), 1);
-            assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,std::f64::NEG_INFINITY));
-            assert_eq!(tris[0].max, p1);
+            let tris = triangulation.locate(Point::new(-1.0, -1.0));
+            // assert_eq!(tris.len(), 1);
+            // assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,std::f64::NEG_INFINITY));
+            // assert_eq!(tris[0].max, p1);
         }
     }
-
 
     #[test]
     fn two_point_triangulation() {
@@ -1509,12 +1598,22 @@ mod tests {
         let p2 = Point::new(1.0, 1.0);
         triangulation.add_point(p1);
         for (i, edge) in triangulation.qeds.base_edges().enumerate() {
-            println!("Edge[{}]: {}-{}", i, edge.edge().point, edge.sym().edge().point);
+            println!(
+                "Edge[{}]: {}-{}",
+                i,
+                edge.edge().point,
+                edge.sym().edge().point
+            );
         }
         triangulation.add_point(p2);
         println!("Triangulation: {:?}", triangulation);
         for (i, edge) in triangulation.qeds.base_edges().enumerate() {
-            println!("Edge[{}]: {}-{}", i, edge.edge().point, edge.sym().edge().point);
+            println!(
+                "Edge[{}]: {}-{}",
+                i,
+                edge.edge().point,
+                edge.sym().edge().point
+            );
         }
         assert_eq!(triangulation.qeds.quads.len(), 11);
     }
