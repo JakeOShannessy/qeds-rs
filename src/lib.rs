@@ -27,23 +27,83 @@ impl Triangulation {
     // TODO: we need to be able to locate on an edge etc.
     // TODO: This has not yet been proved to be stable. It may also loop inifintely
     pub fn locate(&self, point: Point) -> EdgeRefA<Point, ()> {
+        use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
+        let mut rng = rand::thread_rng();
+        let mut current_iterations = 0;
         loop {
+            current_iterations += 1;
+            if current_iterations > 100 {
+                panic!("locating failed");
+            }
+            // A random variable to determine if onext is tested first. If not
+            // it is tested second.
+            let onext_first: bool = rng.gen();
             if point == e.edge().point || point == e.sym().edge().point {
                 return e;
-            } else if e.lies_right(point) {
+            } else if e.lies_right(point) == Lies::Yes {
                 e = e.sym();
-            } else if !e.onext().lies_right(point) {
-                e = e.onext();
-            } else if !e.d_prev().lies_right(point) {
-                e = e.d_prev();
             } else {
-                return e;
+                if onext_first {
+                    if e.d_prev().lies_right(point) != Lies::Yes {
+                        e = e.d_prev();
+                    } else if e.onext().lies_right(point) != Lies::Yes {
+                        e = e.onext();
+                    } else {
+                        return e;
+                    }
+                } else {
+                    if e.d_prev().lies_right(point) != Lies::Yes {
+                        e = e.d_prev();
+                    } else if e.onext().lies_right(point) != Lies::Yes {
+                        e = e.onext();
+                    } else {
+                        return e;
+                    }
+                }
             }
         }
     }
 
-    pub fn add_point(&mut self, point: Point) {
+    // pub fn locate(&self, point: Point) -> EdgeRefA<Point, ()> {
+    //     let mut matches = Vec::new();
+    //     for e1 in self.qeds.base_edges() {
+    //         let e2 = e1.sym();
+    //         if e1.in_left_face(point) {
+    //             matches.push(e1.target());
+    //         }
+    //         if e2.in_left_face(point) {
+    //             matches.push(e2.target());
+    //         }
+    //     }
+    //     // Just return the first one for now. TODO: don't do this.
+    //     unsafe {
+    //         let e = self.qeds.edge_a_ref(*matches.get(0).expect("No triangle matches"));
+    //         let face_points: Vec<(Point,Point)> = e.l_face().vertices_pairs().collect();
+    //         assert_eq!(face_points.len(), 3);
+    //         println!("{} lies in the face described by {:?}, as {}", point, face_points, e.in_left_face(point));
+    //         for edge in e.l_face().edges.iter() {
+    //             println!("PEdge: {} {}, lies left: {}", edge.edge().point, edge.sym().edge().point, edge.lies_left(point));
+    //         }
+    //         for edge in e.l_face().edges.iter() {
+    //             println!("FEdge: {} {}, lies left: {}", edge.edge().point, edge.sym().edge().point, !edge.lies_left(point));
+    //             // if !edge.lies_left(point) {
+    //             //     return false;
+    //             // }
+    //         }
+    //         e
+    //     }
+    // }
+
+    pub fn add_point(&mut self, mut point: Point) {
+        point.x *= 1.0e6;
+        point.x = point.x.round();
+        point.x *= 1.0e-6;
+
+        point.y *= 1.0e6;
+        point.y = point.y.round();
+        point.y *= 1.0e-6;
+
         // TODO: consider: points lying on other points, on lines, and within triangles.
         if self.qeds.quads.len() == 0 {
             // If there are no edges, we can just add a point with cardinal
@@ -82,22 +142,20 @@ impl Triangulation {
 
     fn add_to_l_face(&mut self, mut edge_target: EdgeTarget, point: Point) {
         unsafe {
+            if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
+                // todo!("We haven't yet considered on-line");
+                let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
+                let to_delete = edge_target;
+                self.qeds.delete(to_delete);
+                edge_target = oprev;
+            }
             let first = self.qeds.edge_a_ref(edge_target).edge().point;
-            println!("First: {}", first);
-            println!(
-                "FirstDest: {}",
-                self.qeds.edge_a_ref(edge_target).sym().edge().point
-            );
             let mut base = self.qeds.make_edge_with_a(first, point).target();
-            self.qeds.splice(edge_target, base.sym());
+            self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.qeds.connect(edge_target, base.sym());
                 edge_target = base_ref.oprev().target();
                 base = base_ref.target();
-                println!(
-                    "self.qeds.edge_a(edge_target.sym()).point: {}",
-                    self.qeds.edge_a(edge_target.sym()).point
-                );
                 if self.qeds.edge_a(edge_target.sym()).point == first {
                     break;
                 }
@@ -178,7 +236,15 @@ impl Triangulation {
         let b = edge.r_prev().sym().edge().point;
         let c = edge.l_next().edge().point;
         let d = edge.onext().sym().edge().point;
-        del_test_ccw(a, b, c, d)
+        if !a.is_finite() && d.is_finite() && b.is_finite() {
+            cross_product_2d(d - c, b - c) > 0.0
+        } else if !c.is_finite() && d.is_finite() && b.is_finite() {
+            cross_product_2d(b - a, d - a) > 0.0
+        } else if !a.is_finite() || !b.is_finite() || !c.is_finite() || !d.is_finite() {
+            false
+        } else {
+            del_test_ccw(a, b, c, d)
+        }
     }
 
     // TODO: remove this
@@ -195,18 +261,20 @@ impl Triangulation {
     }
 
     pub unsafe fn swap(&mut self, e: EdgeTarget) {
-        let edge = self.qeds.edge_a_ref(e);
-        let a = edge.oprev().target();
-        let a_dest = edge.oprev().sym().edge().point;
-        let a_lnext = edge.oprev().l_next().target();
-        let b = edge.sym().oprev().target();
-        let b_dest = edge.sym().oprev().sym().edge().point;
-        let b_lnext = edge.sym().oprev().l_next().target();
-        drop(edge);
+        let a = self.qeds.edge_a_ref(e).oprev().target();
+        let b = self.qeds.edge_a_ref(e).sym().oprev().target();
+
         self.qeds.splice(e, a);
         self.qeds.splice(e.sym(), b);
+
+        let a_lnext = self.qeds.edge_a_ref(a).l_next().target();
         self.qeds.splice(e, a_lnext);
+
+        let b_lnext = self.qeds.edge_a_ref(b).l_next().target();
         self.qeds.splice(e.sym(), b_lnext);
+
+        let a_dest = self.qeds.edge_a_ref(a).sym().edge().point;
+        let b_dest = self.qeds.edge_a_ref(b).sym().edge().point;
         self.qeds.edge_a_mut(e).point = a_dest;
         self.qeds.edge_a_mut(e.sym()).point = b_dest;
     }
@@ -224,6 +292,9 @@ impl Triangulation {
     // }
 }
 
+fn cross_product_2d(Point { x: x1, y: y1 }: Point, Point { x: x2, y: y2 }: Point) -> f64 {
+    x1 * y2 - x2 * y1
+}
 #[derive(Copy, Clone, Debug, PartialOrd, PartialEq)]
 pub struct Triangle {
     /// The minimum bounding point.
@@ -527,10 +598,9 @@ impl<AData, BData> Qeds<AData, BData> {
     }
 
     pub unsafe fn delete(&mut self, e: EdgeTarget) {
-        let edge = self.edge_ref(e);
-        let oprev = edge.oprev().target();
-        let sym_oprev = edge.sym().oprev().target();
+        let oprev = self.edge_ref(e).oprev().target();
         self.splice(e, oprev);
+        let sym_oprev = self.edge_ref(e).sym().oprev().target();
         self.splice(e.sym(), sym_oprev);
         // TODO: verify that this is correct
         self.quads.remove(e.e);
@@ -678,38 +748,178 @@ impl<'a, BData> EdgeRefA<'a, Point, BData> {
         this_point.midpoint(next_point)
     }
 
-    pub fn lies_right(&self, point: Point) -> bool {
+    pub fn in_left_face(&self, point: Point) -> bool {
+        for edge in self.l_face().edges.iter() {
+            let is_left = edge.lies_left(point);
+            if !is_left {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn lies_right(&self, point: Point) -> Lies {
+        use Lies::*;
         let pa = self.edge().point;
         let pb = self.sym().edge().point;
         // We have special treatment of infinite edges.
         if !pa.is_finite() && !pb.is_finite() {
-            if pa.x == std::f64::INFINITY && pb.y ==std::f64::INFINITY {
+            if pa.x == std::f64::INFINITY && pb.y == std::f64::INFINITY {
                 // CCW
-                false
-            } else if pa.y == std::f64::INFINITY && pb.x ==std::f64::NEG_INFINITY {
+                No
+            } else if pa.y == std::f64::INFINITY && pb.x == std::f64::NEG_INFINITY {
                 // CCW
-                false
-            } else if pa.x == std::f64::NEG_INFINITY && pb.y ==std::f64::NEG_INFINITY {
+                No
+            } else if pa.x == std::f64::NEG_INFINITY && pb.y == std::f64::NEG_INFINITY {
                 // CCW
-                false
-            } else if pa.y == std::f64::NEG_INFINITY && pb.x ==std::f64::INFINITY {
+                No
+            } else if pa.y == std::f64::NEG_INFINITY && pb.x == std::f64::INFINITY {
                 // CCW
-                false
+                No
             } else {
                 // asssuming CW
-                true
+                Yes
             }
-        } else if pa.x.is_finite() {
-            point.y > pb.y
-        } else if pb.x.is_finite() {
-            point.y < pa.y
-        } else if pa.y.is_finite() {
-            point.x > pb.x
-        } else if pb.y.is_finite() {
-            point.x < pa.x
+        } else if pa.x == std::f64::INFINITY {
+            if point.y == pb.y {
+                On
+            } else if point.y > pb.y {
+                Yes
+            } else {
+                No
+            }
+        } else if pa.x == std::f64::NEG_INFINITY {
+            if point.y == pb.y {
+                On
+            } else if point.y < pb.y {
+                Yes
+            } else {
+                No
+            }
+        } else if pa.y == std::f64::INFINITY {
+            if point.x == pb.x {
+                On
+            } else if point.x < pb.x {
+                Yes
+            } else {
+                No
+            }
+        } else if pa.y == std::f64::NEG_INFINITY {
+            if point.x == pb.x {
+                On
+            } else if point.x > pb.x {
+                Yes
+            } else {
+                No
+            }
+        } else if pb.x == std::f64::INFINITY {
+            if point.y == pa.y {
+                On
+            } else if point.y < pa.y {
+                Yes
+            } else {
+                No
+            }
+        } else if pb.x == std::f64::NEG_INFINITY {
+            if point.y == pa.y {
+                On
+            } else if point.y > pa.y {
+                Yes
+            } else {
+                No
+            }
+        } else if pb.y == std::f64::INFINITY {
+            if point.x == pb.x {
+                On
+            } else if point.x > pa.x {
+                Yes
+            } else {
+                No
+            }
+        } else if pb.y == std::f64::NEG_INFINITY {
+            if point.x == pb.x {
+                On
+            } else if point.x < pa.x {
+                Yes
+            } else {
+                No
+            }
         } else {
-            left_or_right(pa, pb, point) == Direction::Right
+            match left_or_right(pa, pb, point) {
+                Direction::Right => Yes,
+                Direction::Straight => On,
+                Direction::Left => No,
+            }
         }
+    }
+
+    pub fn lies_left(&self, point: Point) -> bool {
+        let pa = self.edge().point;
+        let pb = self.sym().edge().point;
+        lies_left(point, pa, pb)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub enum Lies {
+    Yes,
+    No,
+    On,
+}
+
+fn lies_left(point: Point, pa: Point, pb: Point) -> bool {
+    print!("Does {} lie to the left of: {} - {}", point, pa, pb);
+    // We have special treatment of infinite edges.
+    if !pa.is_finite() && !pb.is_finite() {
+        print!(" infinite");
+        if pa.x == std::f64::INFINITY && pb.y == std::f64::INFINITY {
+            // CCW
+            println!(" yes");
+            true
+        } else if pa.y == std::f64::INFINITY && pb.x == std::f64::NEG_INFINITY {
+            // CCW
+            println!(" yes");
+            true
+        } else if pa.x == std::f64::NEG_INFINITY && pb.y == std::f64::NEG_INFINITY {
+            // CCW
+            println!(" yes");
+            true
+        } else if pa.y == std::f64::NEG_INFINITY && pb.x == std::f64::INFINITY {
+            // CCW
+            println!(" yes");
+            true
+        } else {
+            // asssuming CW
+            println!(" no");
+            false
+        }
+    } else if pa.x == std::f64::INFINITY {
+        println!("a");
+        point.y < pb.y
+    } else if pa.x == std::f64::NEG_INFINITY {
+        println!("b");
+        point.y > pb.y
+    } else if pa.y == std::f64::INFINITY {
+        println!("c({} < {}): {}", point.x, pb.x, point.x < pb.x);
+        point.x > pb.x
+    } else if pa.y == std::f64::NEG_INFINITY {
+        println!("d");
+        point.x < pb.x
+    } else if pb.x == std::f64::INFINITY {
+        println!("e");
+        point.y > pa.y
+    } else if pb.x == std::f64::NEG_INFINITY {
+        println!("f");
+        point.y < pa.y
+    } else if pb.y == std::f64::INFINITY {
+        println!("g");
+        point.x < pb.x
+    } else if pb.y == std::f64::NEG_INFINITY {
+        println!("h");
+        point.x > pb.x
+    } else {
+        println!("..Direction: {:?}", left_or_right(pa, pb, point));
+        left_or_right(pa, pb, point) == Direction::Left
     }
 }
 
@@ -1118,15 +1328,15 @@ pub struct Face<'a, AData, BData> {
 
 impl<BData: Clone> Face<'_, Point, BData> {
     pub fn centroid(&self) -> Option<Point> {
-        let signed_area = self.signed_area()?;
+        let signed_area = self.signed_area();
         if signed_area <= 0.0 {
             return None;
         }
         let mut xsum = 0.0;
         let mut ysum = 0.0;
         for (pa, pb) in self.vertices_pairs() {
-            let pa = pa?;
-            let pb = pb?;
+            let pa = pa;
+            let pb = pb;
             xsum += (pa.x + pb.x) * (pa.x * pb.y - pb.x * pa.y);
             ysum += (pa.y + pb.y) * (pa.x * pb.y - pb.x * pa.y);
         }
@@ -1136,14 +1346,14 @@ impl<BData: Clone> Face<'_, Point, BData> {
         })
     }
 
-    pub fn signed_area(&self) -> Option<f64> {
+    pub fn signed_area(&self) -> f64 {
         let mut sum = 0.0;
         for (pa, pb) in self.vertices_pairs() {
-            let pa = pa?;
-            let pb = pb?;
+            let pa = pa;
+            let pb = pb;
             sum += pa.x * pb.y - pb.x * pa.y;
         }
-        Some(0.5 * sum)
+        0.5 * sum
     }
     pub fn vertices(&self) -> FaceVerticesIter<BData> {
         FaceVerticesIter::new(self)
@@ -1180,14 +1390,14 @@ impl<'a, BData> FaceVerticesIter<'a, BData> {
 }
 
 impl<'a, BData> Iterator for FaceVerticesIter<'a, BData> {
-    type Item = Option<Point>;
+    type Item = Point;
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_index >= self.face.edges.len() {
             None
         } else {
-            let edge = self.face.edges.get(self.next_index);
+            let edge = self.face.edges.get(self.next_index)?;
             self.next_index += 1;
-            Some(edge.map(|edge| edge.edge().point))
+            Some(edge.edge().point)
         }
     }
 }
@@ -1260,6 +1470,7 @@ impl Sub for Point {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn bad_collinear() {
@@ -1516,44 +1727,102 @@ mod tests {
         }
     }
 
-    fn has_edge(triangulation: &Triangulation, pa: Point, pb:Point) -> bool {
+    fn has_edge(triangulation: &Triangulation, pa: Point, pb: Point) -> bool {
         get_edge(triangulation, pa, pb).is_some()
     }
 
-    fn get_edge(triangulation: &Triangulation, pa: Point, pb:Point) -> Option<EdgeRefA<'_,Point,()>> {
+    fn get_edge(
+        triangulation: &Triangulation,
+        pa: Point,
+        pb: Point,
+    ) -> Option<EdgeRefA<'_, Point, ()>> {
         for (i, quad) in triangulation.qeds.quads.iter() {
             let edge1 = quad.edges_a[0].point;
             let edge2 = quad.edges_a[1].point;
             let edge_target = if edge1 == pa && edge2 == pb {
-                EdgeTarget::new(i,0,0)
+                EdgeTarget::new(i, 0, 0)
             } else if edge1 == pb && edge2 == pa {
-                EdgeTarget::new(i,2,0)
+                EdgeTarget::new(i, 2, 0)
             } else {
                 continue;
             };
-            return Some(unsafe{triangulation.qeds.edge_a_ref(edge_target)});
+            return Some(unsafe { triangulation.qeds.edge_a_ref(edge_target) });
         }
         None
     }
 
     #[test]
-    fn one_point_triangulation() {
+    fn one_point_triangulation_only() {
         let mut triangulation = Triangulation::new();
         let p1 = Point::new(0.0, 0.0);
         triangulation.add_point(p1);
         assert_eq!(triangulation.qeds.quads.len(), 8, "wrong number of quads");
         // Test that it has all four of the correct edges
-        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(0.0,std::f64::INFINITY)), "missing north edge");
-        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(0.0,std::f64::NEG_INFINITY)), "missing south edge");
-        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(std::f64::INFINITY,0.0)), "missing east edge");
-        assert!(has_edge(&triangulation, Point::new(0.0,0.0), Point::new(std::f64::NEG_INFINITY,0.0)), "missing west edge");
-        let north_edge = get_edge(&triangulation, Point::new(0.0,0.0), Point::new(0.0,std::f64::INFINITY)).unwrap();
+        assert!(
+            has_edge(
+                &triangulation,
+                Point::new(0.0, 0.0),
+                Point::new(0.0, std::f64::INFINITY)
+            ),
+            "missing north edge"
+        );
+        assert!(
+            has_edge(
+                &triangulation,
+                Point::new(0.0, 0.0),
+                Point::new(0.0, std::f64::NEG_INFINITY)
+            ),
+            "missing south edge"
+        );
+        assert!(
+            has_edge(
+                &triangulation,
+                Point::new(0.0, 0.0),
+                Point::new(std::f64::INFINITY, 0.0)
+            ),
+            "missing east edge"
+        );
+        assert!(
+            has_edge(
+                &triangulation,
+                Point::new(0.0, 0.0),
+                Point::new(std::f64::NEG_INFINITY, 0.0)
+            ),
+            "missing west edge"
+        );
+        let north_edge = get_edge(
+            &triangulation,
+            Point::new(0.0, 0.0),
+            Point::new(0.0, std::f64::INFINITY),
+        )
+        .unwrap();
 
-        assert_eq!(north_edge.edge().point, Point::new(0.0,0.0));
-        assert_eq!(north_edge.sym().edge().point, Point::new(0.0,std::f64::INFINITY));
+        assert_eq!(north_edge.edge().point, Point::new(0.0, 0.0));
+        assert_eq!(
+            north_edge.sym().edge().point,
+            Point::new(0.0, std::f64::INFINITY)
+        );
 
-        assert_eq!(north_edge.sym().onext().edge().point, Point::new(0.0,std::f64::INFINITY));
-        assert_eq!(north_edge.sym().onext().sym().edge().point, Point::new(std::f64::INFINITY,0.0));
+        assert_eq!(
+            north_edge.sym().onext().edge().point,
+            Point::new(0.0, std::f64::INFINITY)
+        );
+        assert_eq!(
+            north_edge.sym().onext().sym().edge().point,
+            Point::new(std::f64::INFINITY, 0.0)
+        );
+    }
+
+    #[test]
+    fn lies_left_1() {
+        assert!(!lies_left(
+            Point::new(1.0, -1.0),
+            Point { x: 0.0, y: 0.0 },
+            Point {
+                x: std::f64::INFINITY,
+                y: 0.0
+            }
+        ));
     }
 
     #[test]
@@ -1564,30 +1833,80 @@ mod tests {
         {
             // North-East
             let edge = triangulation.locate(Point::new(1.0, 1.0));
-            // assert_eq!(edge.);
-            // assert_eq!(tris[0].min, p1);
-            // assert_eq!(tris[0].max, Point::new(std::f64::INFINITY,std::f64::INFINITY));
+            let face_verts: Vec<Point> = edge.l_face().vertices().collect();
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(std::f64::INFINITY, p1.y))
+                .is_some());
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(p1.x, std::f64::INFINITY))
+                .is_some());
+            assert!(face_verts.iter().find(|x| **x == p1).is_some());
         }
         {
             // North-West
-            let tris = triangulation.locate(Point::new(-1.0, 1.0));
-            // assert_eq!(tris.len(), 1);
-            // assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,p1.y));
-            // assert_eq!(tris[0].max, Point::new(p1.x,std::f64::INFINITY));
+            let edge = triangulation.locate(Point::new(-1.0, 1.0));
+            let face_verts: Vec<Point> = edge.l_face().vertices().collect();
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(std::f64::NEG_INFINITY, p1.y))
+                .is_some());
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(p1.x, std::f64::INFINITY))
+                .is_some());
+            assert!(face_verts.iter().find(|x| **x == p1).is_some());
         }
         {
             // South-East
-            let tris = triangulation.locate(Point::new(1.0, -1.0));
-            // assert_eq!(tris.len(), 1);
-            // assert_eq!(tris[0].min, Point::new(p1.x,std::f64::NEG_INFINITY));
-            // assert_eq!(tris[0].max, Point::new(std::f64::INFINITY, p1.y));
+            let point = Point::new(1.0, -1.0);
+            let edge = triangulation.locate(point);
+            let face_verts: Vec<Point> = edge.l_face().vertices().collect();
+            assert!(!lies_left(
+                point,
+                Point { x: 0.0, y: 0.0 },
+                Point {
+                    x: std::f64::INFINITY,
+                    y: 0.0
+                }
+            ));
+
+            for edge in edge.l_face().edges.iter() {
+                println!(
+                    "Edge: {} {}, lies left: {}",
+                    edge.edge().point,
+                    edge.sym().edge().point,
+                    edge.lies_left(point)
+                );
+                // if !self.lies_left(point) {
+                //     return false;
+                // }
+            }
+
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(std::f64::INFINITY, p1.y))
+                .is_some());
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(p1.x, std::f64::NEG_INFINITY))
+                .is_some());
+            assert!(face_verts.iter().find(|x| **x == p1).is_some());
         }
         {
             // South-West
-            let tris = triangulation.locate(Point::new(-1.0, -1.0));
-            // assert_eq!(tris.len(), 1);
-            // assert_eq!(tris[0].min, Point::new(std::f64::NEG_INFINITY,std::f64::NEG_INFINITY));
-            // assert_eq!(tris[0].max, p1);
+            let edge = triangulation.locate(Point::new(-1.0, -1.0));
+            let face_verts: Vec<Point> = edge.l_face().vertices().collect();
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(std::f64::NEG_INFINITY, p1.y))
+                .is_some());
+            assert!(face_verts
+                .iter()
+                .find(|x| **x == Point::new(p1.x, std::f64::NEG_INFINITY))
+                .is_some());
+            assert!(face_verts.iter().find(|x| **x == p1).is_some());
         }
     }
 
@@ -1616,28 +1935,149 @@ mod tests {
             );
         }
         assert_eq!(triangulation.qeds.quads.len(), 11);
+        assert!(has_edge(&triangulation, p1, p2), "missing edge");
+        assert!(
+            has_edge(&triangulation, p2, Point::new(0.0, std::f64::INFINITY)),
+            "missing edge"
+        );
+        assert!(
+            has_edge(&triangulation, p2, Point::new(std::f64::INFINITY, 0.0)),
+            "missing edge"
+        );
     }
 
     #[test]
     fn triangle_triangulation() {
         let mut triangulation = Triangulation::new();
         let p1 = Point::new(0.0, 0.0);
-        let p2 = Point::new(5.0, 0.0);
-        let p3 = Point::new(2.5, 5.0);
+        let p2 = Point::new(5.0, 0.10);
+        let p3 = Point::new(2.5, 5.1);
         triangulation.add_point(p1);
         triangulation.add_point(p2);
         triangulation.add_point(p3);
+    }
+
+    fn valid_triangulation(triangulation: &Triangulation) {
+        for (i, quad) in triangulation.qeds.quads.iter() {
+            let target1 = EdgeTarget::new(i, 0, 0);
+            let target2 = EdgeTarget::new(i, 2, 0);
+            unsafe {
+                assert_ne!(
+                    triangulation.qeds.edge_a_ref(target1).onext().target(),
+                    target1,
+                    "Edge {:?} with points {} - {} has a floating end",
+                    target1,
+                    triangulation.qeds.edge_a_ref(target1).edge().point,
+                    triangulation.qeds.edge_a_ref(target1).sym().edge().point
+                );
+                assert_ne!(
+                    triangulation.qeds.edge_a_ref(target2).onext().target(),
+                    target2,
+                    "Edge {:?} with points {} - {} has a floating end",
+                    target2,
+                    triangulation.qeds.edge_a_ref(target2).edge().point,
+                    triangulation.qeds.edge_a_ref(target2).sym().edge().point
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn detailed_triangulation() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(10.0, 1.0);
+        let p3 = Point::new(5.0, 10.0);
+        let p4 = Point::new(11.0, 11.0);
+        let p5 = Point::new(15.0, 2.5);
+        let p6 = Point::new(12.0, 12.5);
+        let p7 = Point::new(15.0, 12.5);
+        triangulation.add_point(p1);
+        triangulation.add_point(p2);
+        triangulation.add_point(p3);
+        valid_triangulation(&triangulation);
+        // triangulation.add_point(p4);
+    }
+
+    #[test]
+    fn spiral_triangulation() {
+        let mut triangulation = Triangulation::new();
+        // triangulation.add_point(Point::new(0.0, 0.0));
+        let a = 1.0;
+        let n_max = 100;
+        for n in 0..n_max {
+            let t = (n as f64 / 6.0) * std::f64::consts::PI;
+            let x = a * t * t.cos();
+            let y = a * t * t.sin();
+            triangulation.add_point(Point::new(x, y));
+        }
+        valid_triangulation(&triangulation);
     }
 
     #[test]
     fn line_triangulation() {
         let mut triangulation = Triangulation::new();
         let p1 = Point::new(0.0, 0.0);
+        triangulation.add_point(p1);
+        {
+            let point = Point::new(1.0, 0.0);
+            println!("locating");
+            let edge = triangulation.locate(point);
+            println!("located");
+            println!(
+                "OnEdge[{:?}]: {} - {}",
+                edge.lies_right(point),
+                edge.edge().point,
+                edge.sym().edge().point
+            );
+        }
+        // assert_eq!(triangulation.qeds.quads.len(), 0, "wrong number of quads");
         let p2 = Point::new(5.0, 0.0);
         let p3 = Point::new(7.0, 0.0);
+        triangulation.add_point(p2);
+        triangulation.add_point(p3);
+        for edge in triangulation.qeds.base_edges() {
+            println!(
+                "Base Edge: {} - {}",
+                edge.edge().point,
+                edge.sym().edge().point
+            );
+        }
+    }
+
+    #[test]
+    fn problem_triangulation_swap() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(10.0, 0.0);
+        let p3 = Point::new(5.0, 10.0);
         triangulation.add_point(p1);
         triangulation.add_point(p2);
-        // triangulation.add_point(p3);
+        triangulation.add_point(p3);
+        let e = get_edge(&triangulation, p3, Point::new(0.0, std::f64::INFINITY))
+            .expect("no expected edge");
+        println!("e: {:?} - del_test: {}", e.target(), unsafe {
+            triangulation.del_test(e.target())
+        });
+        triangulation.retriangulate_all();
+    }
+
+    #[test]
+    fn simple_triangulation_swap() {
+        let mut triangulation = Triangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(-1.0, 1.0);
+        let p3 = Point::new(1.0, 1.0);
+        triangulation.add_point(p1);
+        triangulation.add_point(p2);
+        triangulation.add_point(p3);
+        let e = get_edge(&triangulation, p1, Point::new(0.0, std::f64::INFINITY))
+            .expect("no expected edge");
+        println!("Cross Product: {}", cross_product_2d(p3 - p1, p2 - p1));
+        println!("e: {:?} - del_test: {}", e.target(), unsafe {
+            triangulation.del_test(e.target())
+        });
+        triangulation.retriangulate_all();
     }
 
     // #[ignore]
