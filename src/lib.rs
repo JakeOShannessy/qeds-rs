@@ -56,7 +56,7 @@ impl Triangulation {
         let mut current_iterations = 0;
         loop {
             current_iterations += 1;
-            if current_iterations > 100 {
+            if current_iterations > 2000 {
                 panic!("locating failed for: {}", point);
             }
             // A random variable to determine if onext is tested first. If not
