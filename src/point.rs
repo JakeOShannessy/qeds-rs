@@ -73,11 +73,17 @@ impl Sub for Point {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-pub struct SafeFloat(f64);
+pub struct SafeFloat(pub f64);
 
 impl SafeFloat {
-    pub const MAX: SafeFloat = SafeFloat( 0xffffffff_i64 as f64);
-    pub const MIN: SafeFloat = SafeFloat(1.0/(0xfffff_i64 as f64) as f64);
+    // pub const MAX: SafeFloat = SafeFloat( 0xffffffff_i64 as f64);
+    // pub const MIN: SafeFloat = SafeFloat( -0xffffffff_i64 as f64);
+    // pub const EPSILON: SafeFloat = SafeFloat(1.0/(0xfffff_i64 as f64) as f64);
+
+    // For tests
+    pub const MAX: SafeFloat = SafeFloat(30.0);
+    pub const MIN: SafeFloat = SafeFloat(-30.0);
+    pub const EPSILON: SafeFloat = SafeFloat(1.0/(0xf_i64 as f64) as f64);
 }
 
 
@@ -122,6 +128,7 @@ mod tests {
     fn safe_distance() {
         println!("SafeFloat::MAX: {}", SafeFloat::MAX);
         println!("SafeFloat::MIN: {}", SafeFloat::MIN);
-        assert_ne!(SafeFloat::MAX, SafeFloat::MAX - SafeFloat::MIN);
+        println!("SafeFloat::EPSILON: {}", SafeFloat::EPSILON);
+        assert_ne!(SafeFloat::MAX, SafeFloat::MAX - SafeFloat::EPSILON);
     }
 }

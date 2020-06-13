@@ -6,91 +6,42 @@ pub use point::*;
 
 #[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
-pub enum Triangulation {
-    Triangulation(InTriangulation),
-    /// A 'triangulation' that consists of only a single point.
-    Point(Point),
-    /// A 'triangulation' that is empty.
-    Empty,
+pub struct Triangulation {
+    /// The quad-edge data structure we use as the basis for the triangulation.
+    pub qeds: Qeds<Point, ()>,
+    pub boundary_edge: EdgeTarget,
+    pub bounds: Option<(Point,Point)>,
 }
 
 impl Triangulation {
     pub fn new() -> Self {
-        Self::Empty
-    }
+        let mut qeds = Qeds::new();
+        let sw = Point::new(SafeFloat::MIN.0, SafeFloat::MIN.0);
+        let se = Point::new(SafeFloat::MAX.0, SafeFloat::MIN.0);
+        let ne = Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0);
+        let nw = Point::new(SafeFloat::MIN.0, SafeFloat::MAX.0);
+        let south = qeds.make_edge_with_a(sw, se).target();
+        let east = qeds.make_edge_with_a(se, ne).target();
+        unsafe {
+            qeds.splice(east, south.sym());
+            let centre = qeds.connect(east, south).target();
 
-    pub fn triangulation(&self) -> Option<&InTriangulation> {
-        match self {
-            Triangulation::Triangulation(tri) => Some(tri),
-            _ => None,
-        }
-    }
+            let north = qeds.make_edge_with_a(ne, nw).target();
+            qeds.splice(north, east.sym());
+            qeds.connect(north, centre.sym()).target();
 
-    pub fn triangulation_mut(&mut self) -> Option<&mut InTriangulation> {
-        match self {
-            Triangulation::Triangulation(tri) => Some(tri),
-            _ => None,
-        }
-    }
-
-    pub fn locate(&self, point: Point) -> Option<EdgeRefA<Point, ()>> {
-        match self {
-            Triangulation::Triangulation(tri) => tri.locate(point),
-            _ => None,
-        }
-    }
-
-    pub fn add_point(&mut self, mut point: Point) {
-        point.x *= 1.0e6;
-        point.x = point.x.round();
-        point.x *= 1.0e-6;
-
-        point.y *= 1.0e6;
-        point.y = point.y.round();
-        point.y *= 1.0e-6;
-        println!("adding {}", point);
-        match self {
-            Triangulation::Triangulation(tri) => tri.add_point(point),
-            Triangulation::Point(p0) => {
-                let mut qeds: Qeds<Point, ()> = Qeds::new();
-                let boundary_edge = qeds.make_edge_with_a(*p0, point).target();
-                *self = Triangulation::Triangulation(InTriangulation {
-                    qeds,
-                    boundary_edge,
-                });
+            Triangulation {
+                qeds,
+                boundary_edge: south,
+                bounds: None,
             }
-            Triangulation::Empty => *self = Triangulation::Point(point),
         }
     }
 
     pub fn qeds(&self) -> Option<&Qeds<Point, ()>> {
-        self.triangulation().map(|tri| &tri.qeds)
+        Some(&self.qeds)
     }
 
-    pub fn retriangulate_all(&mut self) -> usize {
-        match self {
-            Triangulation::Triangulation(tri) => tri.retriangulate_all(),
-            _ => 0,
-        }
-    }
-
-    pub fn boundary(&self) -> Option<BoundaryIter<Point,()>> {
-        match self {
-            Triangulation::Triangulation(tri) => Some(tri.boundary()),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-/// A Qeds data structure specialised to a 2d triangulation.
-pub struct InTriangulation {
-    /// The quad-edge data structure we use as the basis for the triangulation.
-    pub qeds: Qeds<Point, ()>,
-    pub boundary_edge: EdgeTarget,
-}
-
-impl InTriangulation {
     pub fn some_edge_a(&self) -> Option<EdgeRefA<Point, ()>> {
         let (i, _) = self.qeds.quads.iter().next()?;
         unsafe { Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0))) }
@@ -99,13 +50,6 @@ impl InTriangulation {
     // TODO: we need to be able to locate on an edge etc.
     // TODO: This has not yet been proved to be stable. It may also loop inifintely
     pub fn locate(&self, point: Point) -> Option<EdgeRefA<Point, ()>> {
-        for edge in self.boundary() {
-            if edge.lies_right_strict(point){
-                return None;
-            } else if edge.lies_right(point) == Lies::On {
-                return Some(edge);
-            }
-        }
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
         let mut rng = rand::thread_rng();
@@ -153,82 +97,33 @@ impl InTriangulation {
         point.y = point.y.round();
         point.y *= 1.0e-6;
 
-        let mut relevant_edges = Vec::new();
-        for edge in self.boundary() {
-            if edge.lies_right_strict(point) {
-                relevant_edges.push(edge.target());
+        match self.bounds {
+            None => self.bounds = Some((point,point)),
+            Some(ref mut bounds) => {
+                if point.x < bounds.0.x { bounds.0.x = point.x }
+                if point.y < bounds.0.y { bounds.0.y = point.y }
+                if point.x > bounds.1.x { bounds.1.x = point.x }
+                if point.y > bounds.1.y { bounds.1.y = point.y }
             }
         }
-        // If there are no relevant edges then it must be collinear. In this
-        // case we simply want to join it to the closest point.
-        if relevant_edges.len() != 0 {
-            println!("{} relevant edges: {:?}", relevant_edges.len(),relevant_edges);
-            // The edges need to be sorted such that their points are in CCW
-            // order around the new point. We can do this by performing a CCW on
-            // the base edge points around the new point.
-            unsafe {
-                self.add_external_point_unordered(relevant_edges, point);
-                // TODO: this is inefficient, we only want to swap the ones we
-                // know.
-                self.retriangulate_all();
-            }
-        } else if self.is_linear() {
-            let (closest_point_target, closest_point) = {
-                // Initially assume that the closest point is the Org point of
-                // the first boundary edge.
-                let mut closest_point = unsafe { self.qeds.edge_a_ref(self.boundary_edge) };
-                for edge in self.boundary() {
-                    if point.distance(edge.edge().point)
-                        < point.distance(closest_point.edge().point)
-                    {
-                        closest_point = edge;
-                    }
-                }
-                (closest_point.target(), closest_point.edge().point)
-            };
-            let e = self.qeds.make_edge_with_a(closest_point, point).target();
-            unsafe {
-                self.qeds.splice(closest_point_target, e);
-            }
-        } else {
-            println!("No Relevant edges and not linear");
-            let edge_target = self.locate(point).unwrap().target();
-            self.add_to_l_face(edge_target, point);
-        }
+        let edge_target = self.locate(point).unwrap().target();
+        self.add_to_l_face(edge_target, point);
     }
 
     fn add_to_l_face(&mut self, mut edge_target: EdgeTarget, point: Point) {
         unsafe {
-
             if self.qeds.edge_a_ref(edge_target).edge().point == point || self.qeds.edge_a_ref(edge_target).sym().edge().point == point {
                 return;
             }
-            let mut is_boundary = false;
-            // // dest is for the boundary end-condition.
-            // let dest = self.qeds.edge_a_ref(edge_target).sym().edge().point;
             if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
                 println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
-                for edge in self.boundary() {
-                    if edge.target() == edge_target {
-                        println!("Is Boundary");
-                        is_boundary= true;
-                        return self.add_point(point + Point::new(1.0, 1.0));
-                        todo!("Handle Boundaries");
-                        break;
-                    }
-                }
-
                 let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
-                // let dprev = self.qeds.edge_a_ref(edge_target).dprev().target();
                 let to_delete = edge_target;
                 self.qeds.delete(to_delete);
                 edge_target = oprev;
             }
             let first = self.qeds.edge_a_ref(edge_target).edge().point;
             let mut base = self.qeds.make_edge_with_a(first, point).target();
-            if is_boundary {
-                self.boundary_edge = base;
-            }
             self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.qeds.connect(edge_target, base.sym());
@@ -243,19 +138,22 @@ impl InTriangulation {
             let mut e = edge_target;
             let boundary_targets: HashSet<EdgeTarget> = self.boundary().map(|e|e.target()).collect();
             loop {
-                if boundary_targets.contains(&e)|| boundary_targets.contains(&e.sym()) {
-                    break;
+                let mut is_boundary = false;
+                // assert_eq!(boundary_targets.len(),4);
+                if e.e == 0 || e.e == 1 || e.e == 3 || e.e == 4 {
+                    is_boundary = true;
                 }
-                println!("Looping for swap");
                 let t = self.qeds.edge_a_ref(e).oprev().target();
                 let t_dest = self.qeds.edge_a_ref(t).sym().edge().point;
                 let e_dest = self.qeds.edge_a_ref(e).sym().edge().point;
                 let e_org = self.qeds.edge_a_ref(e).edge().point;
-                // TODO: should this lies_right be inclusive or not?
+
+                let pa = self.qeds.edge_a_ref(e).edge().point;
+                let pb = self.qeds.edge_a_ref(e).sym().edge().point;
+
                 if self.qeds.edge_a_ref(e).lies_right(t_dest) == Lies::Yes
-                    && del_test_ccw(e_org, t_dest, e_dest, point)
+                    && del_test_ccw(e_org, t_dest, e_dest, point) && !is_boundary // && !pa.is_max() && !pb.is_max() // TODO: do we need to guard against flipping edges?
                 {
-                    println!("Performing a swap");
                     self.swap(e);
                     e = t;
                 } else if e_org == first {
@@ -360,8 +258,10 @@ impl InTriangulation {
     fn retriangulate_all_single_pass(&mut self) -> usize {
         let mut swaps = 0;
         let boundary_targets: HashSet<EdgeTarget> = self.boundary().map(|e|e.target()).collect();
-        let edge_targets: Vec<EdgeTarget> =
-            self.qeds.base_edges().map(|edge| edge.target()).filter(|e| !(boundary_targets.contains(e) || boundary_targets.contains(&e.sym()))).collect();
+        let edge_targets: Vec<EdgeTarget> = self.qeds.base_edges()
+            .map(|edge| edge.target())
+            .filter(|e| !(boundary_targets.contains(e) || boundary_targets.contains(&e.sym())))
+            .collect();
         for e in edge_targets.into_iter() {
             unsafe {
                 if self.del_test(e) {
@@ -1738,10 +1638,6 @@ mod tests {
         let mut triangulation = Triangulation::new();
         let p1 = Point::new(0.0, 0.0);
         triangulation.add_point(p1);
-        match triangulation {
-            Triangulation::Point(p) => assert_eq!(p1, p),
-            _ => assert!(false, "Should be a single point triangulation."),
-        }
     }
 
     #[test]
@@ -1759,9 +1655,35 @@ mod tests {
     #[test]
     fn one_point_triangulation_location() {
         let mut triangulation = Triangulation::new();
-        let p1 = Point::new(0.0, 0.0);
+        // assert_eq!(triangulation.qeds().unwrap().quads.len(), 5);
+        let south = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(0,0,0))};
+        assert_eq!(south.edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MIN.0));
+        assert_eq!(south.sym().edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MIN.0));
+
+        assert_eq!(south.target(), south.l_next().l_next().l_next().target());
+        assert_eq!(south.l_next().l_next().oprev().target(),EdgeTarget::new(3,0,0));
+        assert_eq!(south.l_next().l_next().oprev().l_next().target(),EdgeTarget::new(4,0,0));
+
+        let east = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(1,0,0))};
+        assert_eq!(east.edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MIN.0));
+        assert_eq!(east.sym().edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MAX.0));
+
+        let centre = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(2,0,0))};
+        assert_eq!(centre.edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MAX.0));
+        assert_eq!(centre.sym().edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MIN.0));
+
+        let north = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(3,0,0))};
+        assert_eq!(north.edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MAX.0));
+        assert_eq!(north.sym().edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MAX.0));
+
+        let west = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(4,0,0))};
+        assert_eq!(west.edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MAX.0));
+        assert_eq!(west.sym().edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MIN.0));
+
+        let p1 = Point::new(1.0, 0.0);
         triangulation.add_point(p1);
-        assert_eq!(triangulation.locate(Point::new(1.0, 1.0)), None);
+        assert_eq!(triangulation.qeds().unwrap().quads.len(), 8);
+        assert_eq!(triangulation.retriangulate_all(),0);
     }
 
     #[test]
@@ -1779,7 +1701,7 @@ mod tests {
                 edge.sym().edge().point
             );
         }
-        assert_eq!(triangulation.qeds().unwrap().quads.len(), 1);
+        assert_eq!(triangulation.qeds().unwrap().quads.len(), 11);
         assert!(has_edge(&triangulation, p1, p2), "missing edge");
     }
 
@@ -1871,7 +1793,6 @@ mod tests {
     #[test]
     fn big_spiral_triangulation() {
         let mut triangulation = Triangulation::new();
-        // triangulation.add_point(Point::new(0.0, 0.0));
         let a = 1.0;
         let n_max = 100;
         for n in 0..n_max {
@@ -1927,26 +1848,7 @@ mod tests {
         triangulation.add_point(p1);
         triangulation.add_point(p2);
         triangulation.add_point(p3);
-        for edge in triangulation.qeds().unwrap().base_edges() {
-            println!(
-                "Base Edge: {} - {}",
-                edge.edge().point,
-                edge.sym().edge().point
-            );
-        }
-        assert_eq!(triangulation.qeds().unwrap().quads.len(), 2);
-        assert!(
-            has_edge(&triangulation, p1, p2),
-            "missing edge {} - {}",
-            p1,
-            p2
-        );
-        assert!(
-            has_edge(&triangulation, p2, p3),
-            "missing edge {} - {}",
-            p2,
-            p3
-        );
+        assert_eq!(triangulation.qeds().unwrap().quads.len(), 14);
     }
 
     #[test]
