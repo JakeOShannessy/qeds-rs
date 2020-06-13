@@ -76,14 +76,14 @@ impl Sub for Point {
 pub struct SafeFloat(pub f64);
 
 impl SafeFloat {
-    pub const MAX: SafeFloat = SafeFloat( 0xffffffff_i64 as f64);
-    pub const MIN: SafeFloat = SafeFloat( -0xffffffff_i64 as f64);
-    pub const EPSILON: SafeFloat = SafeFloat(1.0/(0xfffff_i64 as f64) as f64);
+    // pub const MAX: SafeFloat = SafeFloat( 0xffffffff_i64 as f64);
+    // pub const MIN: SafeFloat = SafeFloat( -0xffffffff_i64 as f64);
+    // pub const EPSILON: SafeFloat = SafeFloat(1.0/(0xfffff_i64 as f64) as f64);
 
     // For tests
-    // pub const MAX: SafeFloat = SafeFloat(60.0);
-    // pub const MIN: SafeFloat = SafeFloat(-60.0);
-    // pub const EPSILON: SafeFloat = SafeFloat(1.0/(0xf_i64 as f64) as f64);
+    pub const MAX: SafeFloat = SafeFloat(200.0);
+    pub const MIN: SafeFloat = SafeFloat(-200.0);
+    pub const EPSILON: SafeFloat = SafeFloat(1.0/(0xf_i64 as f64) as f64);
 }
 
 

@@ -112,14 +112,13 @@ impl Triangulation {
 
     fn add_to_l_face(&mut self, mut edge_target: EdgeTarget, point: Point) {
         unsafe {
+            // println!("Edge Target: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
             if self.qeds.edge_a_ref(edge_target).edge().point == point || self.qeds.edge_a_ref(edge_target).sym().edge().point == point {
                 return;
-            }
-            if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
-                println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
+            } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
+                // println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
                 let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
-                let to_delete = edge_target;
-                self.qeds.delete(to_delete);
+                self.qeds.delete(edge_target);
                 edge_target = oprev;
             }
             let first = self.qeds.edge_a_ref(edge_target).edge().point;
@@ -136,25 +135,89 @@ impl Triangulation {
             edge_target = self.qeds.edge_a_ref(base).oprev().target();
             // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
             let mut e = edge_target;
-            let boundary_targets: HashSet<EdgeTarget> = self.boundary().map(|e|e.target()).collect();
+            // println!("Start Swap Loop: first: {}", first);
             loop {
-                let mut is_boundary = false;
-                // assert_eq!(boundary_targets.len(),4);
-                if e.e == 0 || e.e == 1 || e.e == 3 || e.e == 4 {
-                    is_boundary = true;
-                }
                 let t = self.qeds.edge_a_ref(e).oprev().target();
                 let t_dest = self.qeds.edge_a_ref(t).sym().edge().point;
                 let e_dest = self.qeds.edge_a_ref(e).sym().edge().point;
                 let e_org = self.qeds.edge_a_ref(e).edge().point;
-
-                let pa = self.qeds.edge_a_ref(e).edge().point;
-                let pb = self.qeds.edge_a_ref(e).sym().edge().point;
-
-                if self.qeds.edge_a_ref(e).lies_right(t_dest) == Lies::Yes
-                    && del_test_ccw(e_org, t_dest, e_dest, point) && !is_boundary // && !pa.is_max() && !pb.is_max() // TODO: do we need to guard against flipping edges?
+                // print!("Inspecting Edge for swap: {} {} : [{},{},{},{}] : ", e_org, e_dest, e_org, t_dest, e_dest, point);
+                if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
+                    && del_test_ccw(e_org, t_dest, e_dest, point)
                 {
+                    // println!("swap");
                     self.swap(e);
+                    // This is different from the algorithm in the papaer
+                    e = self.qeds.edge_a_ref(e).oprev().target();
+                } else if e_org == first {
+                    // println!("end");
+                    break;
+                } else {
+                    // println!("don't swap");
+                    e = self.qeds.edge_a_ref(e).onext().l_prev().target();
+                }
+            }
+        }
+    }
+
+
+    pub fn add_point_no_swap(&mut self, mut point: Point) {
+        point.x *= 1.0e6;
+        point.x = point.x.round();
+        point.x *= 1.0e-6;
+
+        point.y *= 1.0e6;
+        point.y = point.y.round();
+        point.y *= 1.0e-6;
+
+        match self.bounds {
+            None => self.bounds = Some((point,point)),
+            Some(ref mut bounds) => {
+                if point.x < bounds.0.x { bounds.0.x = point.x }
+                if point.y < bounds.0.y { bounds.0.y = point.y }
+                if point.x > bounds.1.x { bounds.1.x = point.x }
+                if point.y > bounds.1.y { bounds.1.y = point.y }
+            }
+        }
+        let edge_target = self.locate(point).unwrap().target();
+        self.add_to_l_face_no_swap(edge_target, point);
+    }
+
+    fn add_to_l_face_no_swap(&mut self, mut edge_target: EdgeTarget, point: Point) {
+        unsafe {
+            if self.qeds.edge_a_ref(edge_target).edge().point == point || self.qeds.edge_a_ref(edge_target).sym().edge().point == point {
+                return;
+            } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
+                println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
+                let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
+                self.qeds.delete(edge_target);
+                edge_target = oprev;
+            }
+            let first = self.qeds.edge_a_ref(edge_target).edge().point;
+            let mut base = self.qeds.make_edge_with_a(first, point).target();
+            self.qeds.splice(base, edge_target);
+            loop {
+                let base_ref = self.qeds.connect(edge_target, base.sym());
+                edge_target = base_ref.oprev().target();
+                base = base_ref.target();
+                if self.qeds.edge_a(edge_target.sym()).point == first {
+                    break;
+                }
+            }
+            edge_target = self.qeds.edge_a_ref(base).oprev().target();
+            // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
+            let mut e = edge_target;
+            println!("Start Swap Loop");
+            loop {
+                let t = self.qeds.edge_a_ref(e).oprev().target();
+                let t_dest = self.qeds.edge_a_ref(t).sym().edge().point;
+                let e_dest = self.qeds.edge_a_ref(e).sym().edge().point;
+                let e_org = self.qeds.edge_a_ref(e).edge().point;
+                println!("Inspecting Edge for swap (no effect): {} {}", e_org, e_dest);
+                if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
+                    && del_test_ccw(e_org, t_dest, e_dest, point)
+                {
+                    // self.swap(e);
                     e = t;
                 } else if e_org == first {
                     break;
@@ -238,7 +301,6 @@ impl Triangulation {
     /// Perform Delaunay swapping on the entire triangulation until complete.
     /// Should not be necessary, mainly included for testing.
     pub fn retriangulate_all(&mut self) -> usize {
-        return 0;
         let mut iterations = 0;
         let mut total_swaps = 0;
         loop {
@@ -257,10 +319,8 @@ impl Triangulation {
     /// Warning: this is very inefficient and just for testing.
     fn retriangulate_all_single_pass(&mut self) -> usize {
         let mut swaps = 0;
-        let boundary_targets: HashSet<EdgeTarget> = self.boundary().map(|e|e.target()).collect();
         let edge_targets: Vec<EdgeTarget> = self.qeds.base_edges()
             .map(|edge| edge.target())
-            .filter(|e| !(boundary_targets.contains(e) || boundary_targets.contains(&e.sym())))
             .collect();
         for e in edge_targets.into_iter() {
             unsafe {
@@ -340,7 +400,7 @@ fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
     );
     let det = matrix.determinant();
     // TODO: It seems the LU algorithm from nalgebra is better
-    // let det = determinant_4x4(a.x,
+    // let new_det = determinant_4x4(a.x,
     //     a.y,
     //     a.x.powi(2) + a.y.powi(2),
     //     1.0,
@@ -356,7 +416,7 @@ fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
     //     d.y,
     //     d.x.powi(2) + d.y.powi(2),
     //     1.0,);
-    // println!("Point: {} {} {} {}",a,b,c,d);
+    // // println!("Point: {} {} {} {}",a,b,c,d);
     // assert_eq!(det, new_det);
     det > 0.0
 }
