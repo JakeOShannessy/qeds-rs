@@ -83,9 +83,8 @@ impl SafeFloat {
     // For tests
     pub const MAX: SafeFloat = SafeFloat(200.0);
     pub const MIN: SafeFloat = SafeFloat(-200.0);
-    pub const EPSILON: SafeFloat = SafeFloat(1.0/(0xf_i64 as f64) as f64);
+    pub const EPSILON: SafeFloat = SafeFloat(1.0 / (0xf_i64 as f64) as f64);
 }
-
 
 impl Display for SafeFloat {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
@@ -97,7 +96,7 @@ impl Add for SafeFloat {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        SafeFloat(self.0+other.0)
+        SafeFloat(self.0 + other.0)
     }
 }
 
@@ -105,7 +104,7 @@ impl Mul for SafeFloat {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self {
-        SafeFloat(self.0*other.0)
+        SafeFloat(self.0 * other.0)
     }
 }
 
@@ -113,11 +112,9 @@ impl Sub for SafeFloat {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
-        SafeFloat(self.0-other.0)
+        SafeFloat(self.0 - other.0)
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

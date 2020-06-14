@@ -1,6 +1,9 @@
 use nalgebra::Matrix4;
 use slab::Slab;
-use std::{collections::HashSet, fmt::{Display, Formatter}};
+use std::{
+    collections::HashSet,
+    fmt::{Display, Formatter},
+};
 mod point;
 pub use point::*;
 
@@ -10,7 +13,7 @@ pub struct Triangulation {
     /// The quad-edge data structure we use as the basis for the triangulation.
     pub qeds: Qeds<Point, ()>,
     pub boundary_edge: EdgeTarget,
-    pub bounds: Option<(Point,Point)>,
+    pub bounds: Option<(Point, Point)>,
 }
 
 impl Triangulation {
@@ -78,7 +81,7 @@ impl Triangulation {
                 } else {
                     if !e.d_prev().lies_right_strict(point) {
                         e = e.d_prev();
-                    } else if !e.onext().lies_right_strict(point){
+                    } else if !e.onext().lies_right_strict(point) {
                         e = e.onext();
                     } else {
                         return Some(e);
@@ -98,12 +101,20 @@ impl Triangulation {
         point.y *= 1.0e-6;
 
         match self.bounds {
-            None => self.bounds = Some((point,point)),
+            None => self.bounds = Some((point, point)),
             Some(ref mut bounds) => {
-                if point.x < bounds.0.x { bounds.0.x = point.x }
-                if point.y < bounds.0.y { bounds.0.y = point.y }
-                if point.x > bounds.1.x { bounds.1.x = point.x }
-                if point.y > bounds.1.y { bounds.1.y = point.y }
+                if point.x < bounds.0.x {
+                    bounds.0.x = point.x
+                }
+                if point.y < bounds.0.y {
+                    bounds.0.y = point.y
+                }
+                if point.x > bounds.1.x {
+                    bounds.1.x = point.x
+                }
+                if point.y > bounds.1.y {
+                    bounds.1.y = point.y
+                }
             }
         }
         let edge_target = self.locate(point).unwrap().target();
@@ -113,7 +124,9 @@ impl Triangulation {
     fn add_to_l_face(&mut self, mut edge_target: EdgeTarget, point: Point) {
         unsafe {
             // println!("Edge Target: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
-            if self.qeds.edge_a_ref(edge_target).edge().point == point || self.qeds.edge_a_ref(edge_target).sym().edge().point == point {
+            if self.qeds.edge_a_ref(edge_target).edge().point == point
+                || self.qeds.edge_a_ref(edge_target).sym().edge().point == point
+            {
                 return;
             } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
                 // println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
@@ -160,7 +173,6 @@ impl Triangulation {
         }
     }
 
-
     pub fn add_point_no_swap(&mut self, mut point: Point) {
         point.x *= 1.0e6;
         point.x = point.x.round();
@@ -171,12 +183,20 @@ impl Triangulation {
         point.y *= 1.0e-6;
 
         match self.bounds {
-            None => self.bounds = Some((point,point)),
+            None => self.bounds = Some((point, point)),
             Some(ref mut bounds) => {
-                if point.x < bounds.0.x { bounds.0.x = point.x }
-                if point.y < bounds.0.y { bounds.0.y = point.y }
-                if point.x > bounds.1.x { bounds.1.x = point.x }
-                if point.y > bounds.1.y { bounds.1.y = point.y }
+                if point.x < bounds.0.x {
+                    bounds.0.x = point.x
+                }
+                if point.y < bounds.0.y {
+                    bounds.0.y = point.y
+                }
+                if point.x > bounds.1.x {
+                    bounds.1.x = point.x
+                }
+                if point.y > bounds.1.y {
+                    bounds.1.y = point.y
+                }
             }
         }
         let edge_target = self.locate(point).unwrap().target();
@@ -185,10 +205,16 @@ impl Triangulation {
 
     fn add_to_l_face_no_swap(&mut self, mut edge_target: EdgeTarget, point: Point) {
         unsafe {
-            if self.qeds.edge_a_ref(edge_target).edge().point == point || self.qeds.edge_a_ref(edge_target).sym().edge().point == point {
+            if self.qeds.edge_a_ref(edge_target).edge().point == point
+                || self.qeds.edge_a_ref(edge_target).sym().edge().point == point
+            {
                 return;
             } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
-                println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
+                println!(
+                    "Lies on edge: {} - {}",
+                    self.qeds.edge_a_ref(edge_target).edge().point,
+                    self.qeds.edge_a_ref(edge_target).sym().edge().point
+                );
                 let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
                 self.qeds.delete(edge_target);
                 edge_target = oprev;
@@ -319,9 +345,8 @@ impl Triangulation {
     /// Warning: this is very inefficient and just for testing.
     fn retriangulate_all_single_pass(&mut self) -> usize {
         let mut swaps = 0;
-        let edge_targets: Vec<EdgeTarget> = self.qeds.base_edges()
-            .map(|edge| edge.target())
-            .collect();
+        let edge_targets: Vec<EdgeTarget> =
+            self.qeds.base_edges().map(|edge| edge.target()).collect();
         for e in edge_targets.into_iter() {
             unsafe {
                 if self.del_test(e) {
@@ -420,16 +445,36 @@ fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
     // assert_eq!(det, new_det);
     det > 0.0
 }
-fn determinant_4x4(a:f64,b:f64,c:f64,d:f64, e:f64,f:f64,g:f64,h:f64 ,i:f64,j:f64,k:f64,l:f64, m:f64,n:f64,o:f64,p:f64) -> f64 {
-    a*determinant_3x3(f, g, h, j, k, l, n, o, p)-b*determinant_3x3(e, g, h, i, k, l, m, o, p)+c*determinant_3x3(e, f, h, i, j, l, m, n, p)-d*determinant_3x3(e, f, g, i, j, k, m, n, o)
+fn determinant_4x4(
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    e: f64,
+    f: f64,
+    g: f64,
+    h: f64,
+    i: f64,
+    j: f64,
+    k: f64,
+    l: f64,
+    m: f64,
+    n: f64,
+    o: f64,
+    p: f64,
+) -> f64 {
+    a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
+        + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
+        - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
 }
 
-fn determinant_3x3(a:f64,b:f64,c:f64,d:f64,e:f64,f:f64,g:f64,h:f64,i:f64) -> f64 {
-    a*determinant_2x2(e,f,h,i)-b*determinant_2x2(d,f,g,i)+c*determinant_2x2(d,e,g,h)
+fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
+    a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
+        + c * determinant_2x2(d, e, g, h)
 }
 
-fn determinant_2x2(a:f64,b:f64,c:f64,d:f64) -> f64 {
-    a*d-b*c
+fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    a * d - b * c
 }
 pub struct BoundaryIter<'a, AData, BData> {
     qeds: &'a Qeds<AData, BData>,
@@ -1407,7 +1452,6 @@ impl<'a, BData> Iterator for FaceVerticesIter<'a, BData> {
     }
 }
 
-
 pub fn has_edge(triangulation: &Triangulation, pa: Point, pb: Point) -> bool {
     get_edge(triangulation, pa, pb).is_some()
 }
@@ -1692,7 +1736,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn one_point_triangulation_only() {
         let mut triangulation = Triangulation::new();
@@ -1716,34 +1759,70 @@ mod tests {
     fn one_point_triangulation_location() {
         let mut triangulation = Triangulation::new();
         // assert_eq!(triangulation.qeds().unwrap().quads.len(), 5);
-        let south = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(0,0,0))};
-        assert_eq!(south.edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MIN.0));
-        assert_eq!(south.sym().edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MIN.0));
+        let south = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(0, 0, 0)) };
+        assert_eq!(
+            south.edge().point,
+            Point::new(SafeFloat::MIN.0, SafeFloat::MIN.0)
+        );
+        assert_eq!(
+            south.sym().edge().point,
+            Point::new(SafeFloat::MAX.0, SafeFloat::MIN.0)
+        );
 
         assert_eq!(south.target(), south.l_next().l_next().l_next().target());
-        assert_eq!(south.l_next().l_next().oprev().target(),EdgeTarget::new(3,0,0));
-        assert_eq!(south.l_next().l_next().oprev().l_next().target(),EdgeTarget::new(4,0,0));
+        assert_eq!(
+            south.l_next().l_next().oprev().target(),
+            EdgeTarget::new(3, 0, 0)
+        );
+        assert_eq!(
+            south.l_next().l_next().oprev().l_next().target(),
+            EdgeTarget::new(4, 0, 0)
+        );
 
-        let east = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(1,0,0))};
-        assert_eq!(east.edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MIN.0));
-        assert_eq!(east.sym().edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MAX.0));
+        let east = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(1, 0, 0)) };
+        assert_eq!(
+            east.edge().point,
+            Point::new(SafeFloat::MAX.0, SafeFloat::MIN.0)
+        );
+        assert_eq!(
+            east.sym().edge().point,
+            Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0)
+        );
 
-        let centre = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(2,0,0))};
-        assert_eq!(centre.edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MAX.0));
-        assert_eq!(centre.sym().edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MIN.0));
+        let centre = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(2, 0, 0)) };
+        assert_eq!(
+            centre.edge().point,
+            Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0)
+        );
+        assert_eq!(
+            centre.sym().edge().point,
+            Point::new(SafeFloat::MIN.0, SafeFloat::MIN.0)
+        );
 
-        let north = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(3,0,0))};
-        assert_eq!(north.edge().point, Point::new(SafeFloat::MAX.0,SafeFloat::MAX.0));
-        assert_eq!(north.sym().edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MAX.0));
+        let north = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(3, 0, 0)) };
+        assert_eq!(
+            north.edge().point,
+            Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0)
+        );
+        assert_eq!(
+            north.sym().edge().point,
+            Point::new(SafeFloat::MIN.0, SafeFloat::MAX.0)
+        );
 
-        let west = unsafe{triangulation.qeds.edge_a_ref(EdgeTarget::new(4,0,0))};
-        assert_eq!(west.edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MAX.0));
-        assert_eq!(west.sym().edge().point, Point::new(SafeFloat::MIN.0,SafeFloat::MIN.0));
+        let west = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(4, 0, 0)) };
+        assert_eq!(
+            west.edge().point,
+            Point::new(SafeFloat::MIN.0, SafeFloat::MAX.0)
+        );
+        assert_eq!(
+            west.sym().edge().point,
+            Point::new(SafeFloat::MIN.0, SafeFloat::MIN.0)
+        );
 
         let p1 = Point::new(1.0, 0.0);
         triangulation.add_point(p1);
         assert_eq!(triangulation.qeds().unwrap().quads.len(), 8);
-        assert_eq!(triangulation.retriangulate_all(),0);
+        assert_eq!(triangulation.retriangulate_all(), 0);
     }
 
     #[test]
@@ -1869,19 +1948,19 @@ mod tests {
     #[test]
     fn small_spiral_triangulation() {
         let mut triangulation = Triangulation::new();
-        let p1 = Point::new(0.0,0.0);
-        let p2 = Point::new(0.45344999999999996,0.261799);
-        let p3 = Point::new(0.5235989999999999,0.9068999999999999);
-        let p4 = Point::new(0.408105,0.235619);
-        let p5 = Point::new(0.47123899999999996,0.81621);
-        let p6 = Point::new(0.0,1.413717);
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(0.45344999999999996, 0.261799);
+        let p3 = Point::new(0.5235989999999999, 0.9068999999999999);
+        let p4 = Point::new(0.408105, 0.235619);
+        let p5 = Point::new(0.47123899999999996, 0.81621);
+        let p6 = Point::new(0.0, 1.413717);
         triangulation.add_point(p1);
         triangulation.add_point(p2);
         triangulation.add_point(p3);
         assert!(has_edge(&triangulation, p1, p2));
         assert!(has_edge(&triangulation, p2, p3));
         assert!(has_edge(&triangulation, p3, p1));
-        assert_eq!(triangulation.qeds().unwrap().quads.len(),3);
+        assert_eq!(triangulation.qeds().unwrap().quads.len(), 3);
         triangulation.add_point(p4);
         assert!(has_edge(&triangulation, p1, p4));
         assert!(has_edge(&triangulation, p4, p2));
@@ -1896,8 +1975,6 @@ mod tests {
         assert_eq!(triangulation.retriangulate_all(), 0);
         valid_triangulation(&triangulation);
     }
-
-
 
     #[test]
     fn line_triangulation() {
