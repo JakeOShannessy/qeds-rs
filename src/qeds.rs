@@ -987,7 +987,7 @@ pub struct Face<'a, AData, BData> {
     pub edges: Vec<EdgeRefA<'a, AData, BData>>,
 }
 
-impl<BData: Clone> Face<'_, Point, BData> {
+impl<AData: HasPoint + Clone, BData: Clone> Face<'_, AData, BData> {
     pub fn centroid(&self) -> Option<Point> {
         let signed_area = self.signed_area();
         if signed_area <= 0.0 {
@@ -1016,14 +1016,14 @@ impl<BData: Clone> Face<'_, Point, BData> {
         }
         0.5 * sum
     }
-    pub fn vertices(&self) -> FaceVerticesIter<BData> {
+    pub fn vertices(&self) -> FaceVerticesIter<AData, BData> {
         FaceVerticesIter::new(self)
     }
     pub fn vertices_pairs(
         &self,
     ) -> std::iter::Zip<
-        FaceVerticesIter<'_, BData>,
-        std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'_, BData>>>,
+        FaceVerticesIter<'_, AData, BData>,
+        std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'_, AData, BData>>>,
     > {
         self.vertices().zip(self.vertices().cycle().skip(1))
     }
@@ -1036,13 +1036,13 @@ pub struct FaceB<'a, AData, BData> {
 }
 
 #[derive(Clone, Debug)]
-pub struct FaceVerticesIter<'a, BData> {
-    face: &'a Face<'a, Point, BData>,
+pub struct FaceVerticesIter<'a, AData, BData> {
+    face: &'a Face<'a, AData, BData>,
     next_index: usize,
 }
 
-impl<'a, BData> FaceVerticesIter<'a, BData> {
-    fn new(face: &'a Face<'a, Point, BData>) -> Self {
+impl<'a, AData, BData> FaceVerticesIter<'a, AData, BData> {
+    fn new(face: &'a Face<'a, AData, BData>) -> Self {
         Self {
             face,
             next_index: 0,
@@ -1050,7 +1050,7 @@ impl<'a, BData> FaceVerticesIter<'a, BData> {
     }
 }
 
-impl<'a, BData> Iterator for FaceVerticesIter<'a, BData> {
+impl<'a, AData:HasPoint, BData> Iterator for FaceVerticesIter<'a, AData, BData> {
     type Item = Point;
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_index >= self.face.edges.len() {
@@ -1058,7 +1058,7 @@ impl<'a, BData> Iterator for FaceVerticesIter<'a, BData> {
         } else {
             let edge = self.face.edges.get(self.next_index)?;
             self.next_index += 1;
-            Some(edge.edge().point)
+            Some(edge.edge().point.point())
         }
     }
 }
