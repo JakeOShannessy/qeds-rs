@@ -206,11 +206,7 @@ impl ConstrainedTriangulation {
                         println!("It is to the left");
                         loop {
                             let next_edge = start.onext();
-                            println!(
-                                "looping next: {}-{}",
-                                next_edge.edge().point.point(),
-                                next_edge.sym().edge().point.point(),
-                            );
+                            println!( "looping next: {}-{}", next_edge.edge().point.point(), next_edge.sym().edge().point.point(), );
                             let next_dir = left_or_right(
                                 next_edge.edge().point.point(),
                                 next_edge.sym().edge().point.point(),
@@ -224,6 +220,7 @@ impl ConstrainedTriangulation {
                                     )
                                 }
                                 Left => {
+                                    println!("was left");
                                     start = next_edge;
                                 }
                                 Right => break,
@@ -410,7 +407,9 @@ impl ConstrainedTriangulation {
             // constraint, or simply pb if there are no constraint
             // intersections.
             let (px, px_edge) = {
-                let mut intersecting_edges_iter = self.find_intersections(pa, pb).into_iter();
+                let intersections = self.find_intersections(pa, pb);
+                println!("Intersections: {:?}", intersections);
+                let mut intersecting_edges_iter = intersections.into_iter();
                 loop {
                     if let Some(edge_target) = intersecting_edges_iter.next() {
                         let e = unsafe { self.qeds.edge_a_ref(edge_target) };
@@ -419,6 +418,10 @@ impl ConstrainedTriangulation {
                             // and continue to loop.
                             continue;
                         } else {
+                            println!("Found intersecting constraint");
+                            if !e.sym().edge().point.constraint {
+                                panic!("Inconsistent edge");
+                            }
                             // Otherwise we need to insert this intersection
                             // point.
                             // First find/choose the intersection point.
@@ -455,7 +458,8 @@ impl ConstrainedTriangulation {
             // constraints (although it may of course cross other unconstrained
             // edges). Wherever a an existing unconstrained segment crosses the
             // new segment, flip it so that it aligns with the constraint.
-            let s_intersecting = self.find_intersections(px, pb);
+            let s_intersecting = self.find_intersections(pa, px);
+            println!("Uncon Intersections: {:?}", s_intersecting);
             for s_e in s_intersecting {
                 let s_e_ref = unsafe { self.qeds.edge_a_ref(s_e) };
                 let s_e_constraint = s_e_ref.edge().point.constraint;
