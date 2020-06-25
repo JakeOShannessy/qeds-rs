@@ -853,6 +853,8 @@ pub enum Direction {
     Right,
 }
 
+/// Does p3 lie to the left or the right (or is collinear) of the line formed by
+/// p1 and p2.
 pub fn left_or_right(
     Point { x: x1, y: y1 }: Point,
     Point { x: x2, y: y2 }: Point,

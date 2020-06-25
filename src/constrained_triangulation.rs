@@ -1,6 +1,6 @@
-use nalgebra::Matrix4;
 use crate::point::*;
 use crate::qeds::*;
+use nalgebra::Matrix4;
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub struct Segment {
@@ -42,13 +42,19 @@ impl ConstrainedTriangulation {
         let se = Point::new(SafeFloat::MAX.0, SafeFloat::MIN.0);
         let ne = Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0);
         let nw = Point::new(SafeFloat::MIN.0, SafeFloat::MAX.0);
-        let south = qeds.make_edge_with_a(Segment::new(sw), Segment::new(se)).target();
-        let east = qeds.make_edge_with_a(Segment::new(se), Segment::new(ne)).target();
+        let south = qeds
+            .make_edge_with_a(Segment::new(sw), Segment::new(se))
+            .target();
+        let east = qeds
+            .make_edge_with_a(Segment::new(se), Segment::new(ne))
+            .target();
         unsafe {
             qeds.splice(east, south.sym());
             let centre = qeds.connect(east, south).target();
 
-            let north = qeds.make_edge_with_a(Segment::new(ne), Segment::new(nw)).target();
+            let north = qeds
+                .make_edge_with_a(Segment::new(ne), Segment::new(nw))
+                .target();
             qeds.splice(north, east.sym());
             qeds.connect(north, centre.sym()).target();
 
@@ -69,8 +75,8 @@ impl ConstrainedTriangulation {
         unsafe { Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0))) }
     }
 
-    // TODO: we need to be able to locate on an edge etc.
-    // TODO: This has not yet been proved to be stable. It may also loop inifintely
+    // TODO: This has not yet been proved to be stable. It may also loop
+    // inifintely, particularly with constrianed triangulations.
     pub fn locate(&self, point: Point) -> Option<EdgeRefA<Segment, ()>> {
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
@@ -84,8 +90,12 @@ impl ConstrainedTriangulation {
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
             let onext_first: bool = rng.gen();
-            if point == e.edge().point.point || point == e.sym().edge().point.point {
+            if point == e.edge().point.point {
                 return Some(e);
+            } else if point == e.sym().edge().point.point {
+                // If we lie on the eDest, return eSym(). This is a departure
+                // from the paper which just returns e.
+                return Some(e.sym());
             } else if e.lies_right_strict(point) {
                 e = e.sym();
             } else {
@@ -160,68 +170,181 @@ impl ConstrainedTriangulation {
         }
     }
 
-
+    // TODO: remove the recursion from this function as we don't have tail
+    // recursions.
     /// Edges are returned with each edge pointing from right to left across the
     /// intersection line.
     fn find_intersections(&self, a: Point, b: Point) -> Vec<EdgeTarget> {
+        use Direction::*;
         // TODO: this belongs in the base trianglulation.
         // [`start`] is an edge of the triangle in which the fist point ([`a`])
         // is located.
-        let start = self.locate(a).unwrap();
-        println!("Start is: {}-{}",start.edge().point.point(),start.sym().edge().point.point());
-        // In the case of the first triangle we must test agains three lines
-        // made by combining a with each of the vertices of the triangle. These
-        // lines are ax,ay, and az in CCW order.
-        let x = start.edge().point.point();
-        let y = start.l_next().edge().point.point();
-        let z = start.l_next().l_next().edge().point.point();
-        println!("x is: {}",x);
-        println!("y is: {}",y);
-        println!("z is: {}",z);
-        let ax = (a,x);
-        let ay = (a,y);
-        let az = (a,z);
+        let mut start = self.locate(a).unwrap();
+        println!(
+            "Start is: {}-{}",
+            start.edge().point.point(),
+            start.sym().edge().point.point()
+        );
+        let mut intersecting_edge = if a == start.edge().point.point() {
+            // TODO: there is an issue here as we might not be looking at the
+            // right triangle. This applies both to the initial point and
+            // subsequent "restarts".
 
-        let right_of_ax = match left_or_right(b, ax.0, ax.1) {
-            Direction::Left => false,
-            Direction::Straight => todo!("We don't deal with a line hitting a vertex yet."),
-            Direction::Right => true,
-        };
-        let right_of_ay = match left_or_right(b, ay.0, ay.1) {
-            Direction::Left => false,
-            Direction::Straight => todo!("We don't deal with a line hitting a vertex yet."),
-            Direction::Right => true,
-        };
-        let right_of_az = match left_or_right(b, az.0, az.1) {
-            Direction::Left => false,
-            Direction::Straight => todo!("We don't deal with a line hitting a vertex yet."),
-            Direction::Right => true,
-        };
-        println!("{} is to the {:?} of {}-{}",b,left_or_right(b, ax.0, ax.1),ax.0, ax.1);
-        println!("{} is to the {:?} of {}-{}",b,left_or_right(b, ay.0, ay.1),ay.0, ay.1);
-        println!("{} is to the {:?} of {}-{}",b,left_or_right(b, az.0, az.1),az.0, az.1);
+            // First we need to place ourselves on the correct triangle. To do
+            // that we iterate around the point until we are sure that the line
+            // passes through a given triangle. This is indicated by subsequent
+            // "spokes" switching from left to right. If the line passes through
+            // a vertex we can deal with it here.
+            let initial_start = start;
+            loop {
+                println!("looping top");
+                let start_dir = left_or_right(
+                    start.edge().point.point(),
+                    start.sym().edge().point.point(),
+                    b,
+                );
+                match start_dir {
+                    Left => {
+                        println!("It is to the left");
+                        loop {
+                            println!("looping next");
+                            let next_edge = start.onext();
+                            let next_dir = left_or_right(
+                                next_edge.edge().point.point(),
+                                next_edge.sym().edge().point.point(),
+                                b,
+                            );
+                            match next_dir {
+                                Straight => {
+                                    return self.find_intersections(
+                                        next_edge.sym().edge().point.point(),
+                                        b,
+                                    )
+                                }
+                                Left => {
+                                    start = next_edge;
+                                }
+                                Right => break,
+                            }
+                        }
+                        break;
+                    }
+                    _ => {
+                        println!("It is straight or to the right");
+                        start = start.onext();
+                        if start == initial_start {
+                            panic!("looped around ring");
+                        }
+                    },
+                }
+            }
 
-        // Find the point at which the direction changes from left to right.
-        let mut intersecting_edge = if (right_of_ax, right_of_ay) == (false,true) {
+            //Point a is on startOrg. This changes our initial question
+            // somewhat. We know that the line either intersects the edge
+            // opposite a, or also passes through one of the other vertices.
+            let opposite_edge = start.l_next();
+            // Does the line pass through the vertex to the right?
+            let right_point = opposite_edge.edge().point.point();
+            let passes_through_right = left_or_right(a, right_point, b) == Direction::Straight;
+            if passes_through_right {
+                // If so we need to start the calculation from that vertex.
+                return self.find_intersections(a, right_point);
+            }
+            // Does the line pass through the vertex to the left?
+            let left_point = opposite_edge.sym().edge().point.point();
+            let passes_through_left = left_or_right(a, left_point, b) == Direction::Straight;
+            if passes_through_left {
+                // If so we need to start the calculation from that vertex.
+                return self.find_intersections(a, left_point);
+            }
+            // If it passes through neither, then the intersecting edges is
+            // simply the opposite edge.
+            opposite_edge
+        } else {
+            // In the case of the first triangle we must test agains three lines
+            // made by combining a with each of the vertices of the triangle. These
+            // lines are ax,ay, and az in CCW order.
+            let x = start.edge().point.point();
+            let y = start.l_next().edge().point.point();
+            let z = start.l_next().l_next().edge().point.point();
+            println!("x is: {}", x);
+            println!("y is: {}", y);
+            println!("z is: {}", z);
+            let ax = (a, x);
+            let ay = (a, y);
+            let az = (a, z);
+
+            let right_of_ax = match left_or_right(ax.0, ax.1, b) {
+                Direction::Straight => {
+                    return self.find_intersections(x, b);
+                }
+                other => other,
+            };
+            let right_of_ay = match left_or_right(ay.0, ay.1, b) {
+                Direction::Straight => {
+                    return self.find_intersections(y, b);
+                }
+                other => other,
+            };
+            let right_of_az = match left_or_right(az.0, az.1, b) {
+                Direction::Straight => {
+                    return self.find_intersections(z, b);
+                }
+                other => other,
+            };
+            println!(
+                "{} is to the {:?} of {}-{}",
+                b,
+                left_or_right(ax.0, ax.1, b),
+                ax.0,
+                ax.1
+            );
+            println!(
+                "{} is to the {:?} of {}-{}",
+                b,
+                left_or_right(ay.0, ay.1, b),
+                ay.0,
+                ay.1
+            );
+            println!(
+                "{} is to the {:?} of {}-{}",
+                b,
+                left_or_right(az.0, az.1, b),
+                az.0,
+                az.1
+            );
+
+            // Find the point at which the direction changes from left to right.
+            if (right_of_ax, right_of_ay) == (Left, Right) {
                 start
-            } else if (right_of_ay, right_of_az) == (false,true) {
+            } else if (right_of_ay, right_of_az) == (Left, Right) {
                 start.l_next()
-            } else if (right_of_az, right_of_ax) == (false,true) {
+            } else if (right_of_az, right_of_ax) == (Left, Right) {
                 start.l_next().l_next()
             } else {
                 unreachable!()
-            };
+            }
+        };
         let mut edges: Vec<EdgeTarget> = Vec::new();
         // Now we iterate through all of the triangles.
         loop {
             // If the final point is to the left of the intersecting edge, it is
             // within the triangle, so we don't include the intersection and can
             // break.
-            match left_or_right(b,intersecting_edge.edge().point.point(),intersecting_edge.sym().edge().point.point()) {
+            match left_or_right(
+                b,
+                intersecting_edge.edge().point.point(),
+                intersecting_edge.sym().edge().point.point(),
+            ) {
                 Direction::Left => {
-                    println!("Internal: {} is to the left of {}-{}",b,intersecting_edge.edge().point.point(),intersecting_edge.sym().edge().point.point());
+                    println!(
+                        "Internal: {} is to the left of {}-{}",
+                        b,
+                        intersecting_edge.edge().point.point(),
+                        intersecting_edge.sym().edge().point.point()
+                    );
                     break;
-                },
+                }
                 _ => (),
             }
             edges.push(intersecting_edge.target());
@@ -230,14 +353,18 @@ impl ConstrainedTriangulation {
             let e = intersecting_edge.sym();
             // Get the point opposite.
             let c = e.l_next().sym().edge().point.point();
-            match left_or_right(b,a,c) {
+            match left_or_right(a, c, b) {
                 Direction::Left => {
                     intersecting_edge = e.l_next().l_next();
-                },
-                Direction::Straight => todo!("We don't deal with a line hitting a vertex yet."),
+                }
+                Direction::Straight => {
+                    let mut other_intersections = self.find_intersections(c, b);
+                    edges.append(&mut other_intersections);
+                    return edges;
+                }
                 Direction::Right => {
                     intersecting_edge = e.l_next();
-                },
+                }
             }
         }
         edges
@@ -256,7 +383,6 @@ impl ConstrainedTriangulation {
 
         // First we will get all the intersecting main edges. Currently we do
         // this naively, but there are much better algorithms.
-
 
         // Step 1. Wherever the new segment crosses an existing constrained
         // segment add a new point. Also update the edges accordingly.
@@ -285,7 +411,10 @@ impl ConstrainedTriangulation {
                 edge_target = oprev;
             }
             let first = self.qeds.edge_a_ref(edge_target).edge().point.point;
-            let mut base = self.qeds.make_edge_with_a(Segment::new(first), Segment::new(point)).target();
+            let mut base = self
+                .qeds
+                .make_edge_with_a(Segment::new(first), Segment::new(point))
+                .target();
             self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.qeds.connect(edge_target, base.sym());
@@ -308,7 +437,8 @@ impl ConstrainedTriangulation {
 
                 // TODO: we need to be cautious of infinite loops now that we're constrained.
                 if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
-                    && del_test_ccw(e_org, t_dest, e_dest, point) && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
+                    && del_test_ccw(e_org, t_dest, e_dest, point)
+                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
                 {
                     // println!("swap");
                     self.swap(e);
@@ -367,7 +497,10 @@ impl ConstrainedTriangulation {
                 edge_target = oprev;
             }
             let first = self.qeds.edge_a_ref(edge_target).edge().point.point;
-            let mut base = self.qeds.make_edge_with_a(Segment::new(first), Segment::new(point)).target();
+            let mut base = self
+                .qeds
+                .make_edge_with_a(Segment::new(first), Segment::new(point))
+                .target();
             self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.qeds.connect(edge_target, base.sym());
@@ -449,9 +582,13 @@ impl ConstrainedTriangulation {
             .edge_a_ref(boundary_edge)
             .sym()
             .edge()
-            .point.point
+            .point
+            .point
             .clone();
-        let e = self.qeds.make_edge_with_a(Segment::new(p), Segment::new(dest)).target();
+        let e = self
+            .qeds
+            .make_edge_with_a(Segment::new(p), Segment::new(dest))
+            .target();
         self.qeds.splice(e.sym(), boundary_edge.sym());
         let f = self.qeds.connect(boundary_edge.sym(), e).target();
         (self.qeds.edge_a_ref(f), self.qeds.edge_a_ref(e))
@@ -623,7 +760,6 @@ fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
     a * d - b * c
 }
 
-
 pub fn has_edge(triangulation: &ConstrainedTriangulation, pa: Point, pb: Point) -> bool {
     get_edge(triangulation, pa, pb).is_some()
 }
@@ -647,7 +783,6 @@ pub fn get_edge(
     }
     None
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -795,14 +930,16 @@ mod tests {
                         .unwrap()
                         .edge_a_ref(target1)
                         .edge()
-                        .point.point,
+                        .point
+                        .point,
                     triangulation
                         .qeds()
                         .unwrap()
                         .edge_a_ref(target1)
                         .sym()
                         .edge()
-                        .point.point
+                        .point
+                        .point
                 );
                 assert_ne!(
                     triangulation
@@ -819,14 +956,16 @@ mod tests {
                         .unwrap()
                         .edge_a_ref(target2)
                         .edge()
-                        .point.point,
+                        .point
+                        .point,
                     triangulation
                         .qeds()
                         .unwrap()
                         .edge_a_ref(target2)
                         .sym()
                         .edge()
-                        .point.point
+                        .point
+                        .point
                 );
             }
         }
@@ -1050,7 +1189,10 @@ mod tests {
         triangulation.add_point(p2);
         triangulation.add_point(p3);
         valid_triangulation(&triangulation);
-        assert_eq!(triangulation.find_intersections(Point::new(2.0,2.0), Point::new(4.0,3.0)),vec![]);
+        assert_eq!(
+            triangulation.find_intersections(Point::new(2.0, 2.0), Point::new(4.0, 3.0)),
+            vec![]
+        );
     }
 
     #[test]
@@ -1067,34 +1209,71 @@ mod tests {
         valid_triangulation(&triangulation);
         {
             // single intersection
-            let intersections = triangulation.find_intersections(Point::new(2.0,2.0), Point::new(9.0,8.0));
-            assert_eq!(intersections.len(),1);
-            let first_intersection = unsafe {triangulation.qeds.edge_a_ref(intersections[0])};
+            let intersections =
+                triangulation.find_intersections(Point::new(2.0, 2.0), Point::new(9.0, 8.0));
+            assert_eq!(intersections.len(), 1);
+            let first_intersection = unsafe { triangulation.qeds.edge_a_ref(intersections[0]) };
             // The edges found have a specified direction.
-            assert_eq!((first_intersection.edge().point.point(),first_intersection.sym().edge().point.point()),(p2,p3));
+            assert_eq!(
+                (
+                    first_intersection.edge().point.point(),
+                    first_intersection.sym().edge().point.point()
+                ),
+                (p2, p3)
+            );
         }
         {
             // two intersections
-            let intersections = triangulation.find_intersections(Point::new(2.0,2.0), Point::new(18.0,6.0));
-            assert_eq!(intersections.len(),2);
-            let first_intersection = unsafe {triangulation.qeds.edge_a_ref(intersections[0])};
+            let intersections =
+                triangulation.find_intersections(Point::new(2.0, 2.0), Point::new(18.0, 6.0));
+            assert_eq!(intersections.len(), 2);
+            let first_intersection = unsafe { triangulation.qeds.edge_a_ref(intersections[0]) };
             // The edges found have a specified direction.
-            assert_eq!((first_intersection.edge().point.point(),first_intersection.sym().edge().point.point()),(p2,p3));
-            let second_intersection = unsafe {triangulation.qeds.edge_a_ref(intersections[1])};
-            assert_eq!((second_intersection.edge().point.point(),second_intersection.sym().edge().point.point()),(p2,p4));
+            assert_eq!(
+                (
+                    first_intersection.edge().point.point(),
+                    first_intersection.sym().edge().point.point()
+                ),
+                (p2, p3)
+            );
+            let second_intersection = unsafe { triangulation.qeds.edge_a_ref(intersections[1]) };
+            assert_eq!(
+                (
+                    second_intersection.edge().point.point(),
+                    second_intersection.sym().edge().point.point()
+                ),
+                (p2, p4)
+            );
         }
+        let p5 = Point::new(7.5, 5.0);
+        triangulation.add_point(p5);
         {
-            // trough a vertex (but starting within a triangle).
-            let p5 = Point::new(7.5, 5.0);
-            triangulation.add_point(p5);
-
-            let intersections = triangulation.find_intersections(Point::new(6.0,5.0), Point::new(9.0,5.0));
-            // assert_eq!(intersections.len(),2);
+            // through a vertex (but starting within a triangle).
+            println!("Testing through a vertex");
+            let intersections =
+                triangulation.find_intersections(Point::new(6.0, 5.0), Point::new(9.0, 5.0));
+            assert_eq!(intersections.len(), 0);
             // let first_intersection = unsafe {triangulation.qeds.edge_a_ref(intersections[0])};
             // // The edges found have a specified direction.
             // assert_eq!((first_intersection.edge().point.point(),first_intersection.sym().edge().point.point()),(p2,p3));
             // let second_intersection = unsafe {triangulation.qeds.edge_a_ref(intersections[1])};
             // assert_eq!((second_intersection.edge().point.point(),second_intersection.sym().edge().point.point()),(p2,p4));
+        }
+        {
+            println!("Testing from a vertex (without leaving initial triangle)");
+            let intersections =
+                triangulation.find_intersections(Point::new(0.0, 0.0), Point::new(1.0, 1.0));
+            assert_eq!(intersections.len(), 0);
+        }
+        {
+            // through a vertex (but starting within a triangle).
+            println!("Testing from a vertex (with 1 intersection)");
+            let intersections =
+                triangulation.find_intersections(Point::new(0.0, 0.0), Point::new(8.0, 10.0));
+            assert_eq!(intersections.len(), 1);
+
+            let first_intersection = unsafe {triangulation.qeds.edge_a_ref(intersections[0])};
+            assert_eq!((first_intersection.edge().point.point(),first_intersection.sym().edge().point.point()),(p5,p3));
         }
     }
 }
