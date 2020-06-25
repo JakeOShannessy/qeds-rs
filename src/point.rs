@@ -31,6 +31,16 @@ impl Point {
     pub fn distance(&self, other: Self) -> f64 {
         ((other.x - self.x).powi(2) + (other.y - self.y).powi(2)).sqrt()
     }
+
+    pub fn snap(&mut self) {
+        self.x *= 1.0e6;
+        self.x = self.x.round();
+        self.x *= 1.0e-6;
+
+        self.y *= 1.0e6;
+        self.y = self.y.round();
+        self.y *= 1.0e-6;
+    }
 }
 
 impl Display for Point {
