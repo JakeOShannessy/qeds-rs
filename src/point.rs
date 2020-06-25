@@ -119,7 +119,6 @@ impl Sub for SafeFloat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn safe_distance() {
