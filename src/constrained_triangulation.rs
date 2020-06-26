@@ -127,8 +127,11 @@ impl ConstrainedTriangulation {
         }
     }
 
+    /// The edge this returns should always have the added point at its origin.
     pub fn add_point(&mut self, mut point: Point) -> Option<EdgeTarget> {
+        print!("Attempting to insert point at {} ", point);
         point.snap();
+        println!("but snapped to {}", point);
         self.update_bounds(point);
         if let Some(edge_ref) = self.locate(point) {
             let edge_target = edge_ref.target();
@@ -381,12 +384,29 @@ impl ConstrainedTriangulation {
     }
 
     pub fn add_constraint(&mut self, mut pa: Point, mut pb: Point) -> Option<()> {
-        let mut pa_edge = self.add_point(pa)?;
-        let pb_edge = self.add_point(pb)?;
-
+        let mut pa_edge;
         unsafe {
+            println!("Attempting to insert constraint from {} to {}", pa, pb);
+            pb = {
+                let pb_edge = self.add_point(pb)?;
+                self.qeds.edge_a_ref(pb_edge).edge().point.point()
+            };
+            pa_edge = self.add_point(pa)?;
+            {
+                // TODO: how do we find a stable edge reference to pa? One method
+                // would be to not yet insert pb.
+                let pa_temp = self.qeds.edge_a_ref(pa_edge).edge().point.point();
+                println!("Point a is {}", pa_temp);
+            }
+            // Its possible that pa_edge is swapped out from underneath us.
+
             pa = self.qeds.edge_a_ref(pa_edge).edge().point.point();
-            pb = self.qeds.edge_a_ref(pb_edge).edge().point.point();
+            println!("Point a is {}", pa);
+            println!("Point b is {}", pb);
+        }
+
+        if pa == pb {
+            return Some(());
         }
 
         self.update_bounds(pa);
@@ -399,7 +419,8 @@ impl ConstrainedTriangulation {
         println!("Inserting constraint from {} to {}", pa, pb);
         let mut i = 0;
         // The purpose of this loop is to keep breaking small chunks off the
-        // constraint until we are done.
+        // constraint until we are done. Each iteration of this loop is the
+        // application of one of these "constraint chunks".
         loop {
             println!("Iteration: {}", i);
             i += 1;
@@ -409,8 +430,8 @@ impl ConstrainedTriangulation {
             // We know our starting point pa, we need to find our next point px.
             // This is either a point at an intersection with another
             // constraint, or simply pb if there are no constraint
-            // intersections.
-            let (px, px_edge) = {
+            // intersections. px_edge is any edge with px as its origin.
+            let px = {
                 let intersections = self.find_intersections(pa, pb);
                 println!("Intersections: {:?}", intersections);
                 let mut intersecting_edges_iter = intersections.into_iter();
@@ -449,10 +470,11 @@ impl ConstrainedTriangulation {
                                 (inserted_point, target)
                             };
                             println!("Inserted point at: {}", inserted_point);
-                            break (inserted_point, inserted_edge_target);
+                            // break (inserted_point, inserted_edge_target);
+                            break inserted_point;
                         }
                     } else {
-                        break (pb, pb_edge);
+                        break pb;
                     }
                 }
             };
@@ -462,32 +484,52 @@ impl ConstrainedTriangulation {
             // constraints (although it may of course cross other unconstrained
             // edges). Wherever a an existing unconstrained segment crosses the
             // new segment, flip it so that it aligns with the constraint.
-            let s_intersecting = self.find_intersections(pa, px);
-            println!("Uncon Intersections: {:?}", s_intersecting);
-            for s_e in s_intersecting {
-                let s_e_ref = unsafe { self.qeds.edge_a_ref(s_e) };
-                let s_e_constraint = s_e_ref.edge().point.constraint;
-                drop(s_e_ref);
-                if !s_e_constraint {
-                    unsafe {
-                        // Swap the unconstrained edge.
-                        {
-                            self.swap(s_e);
-                        }
-                    }
-                } else {
-                    panic!("we should not be intersecting with any constrained edges");
+
+            // TODO: we need to modify this algorithm somewhat, as sometime we
+            // need to skip an edge we would like to swap, then come back to it.
+            let mut n = 0;
+            loop {
+                n += 1;
+                if n>200 {
+                    panic!("iterations exceeded");
                 }
+                let s_intersecting = self.find_intersections(pa, px);
+                println!("Uncon Intersections: {:?}", s_intersecting);
+                if s_intersecting.len() == 0 {
+                    break;
+                }
+                for s_e in s_intersecting {
+                    let s_e_ref = unsafe { self.qeds.edge_a_ref(s_e) };
+                    let s_e_constraint = s_e_ref.edge().point.constraint;
+                    drop(s_e_ref);
+                    // We don't need the full del_test just the concave test
+                    // (which means it _can_ be swapped).
+                    if !s_e_constraint && unsafe{self.concave_test(s_e)} {
+                        unsafe {
+                            // Swap the unconstrained edge.
+                            {
+                                self.swap(s_e);
+                            }
+                        }
+                    } else if s_e_constraint {
+                        panic!("we should not be intersecting with any constrained edges");
+                    }
+                }
+
             }
+            // A debug check to ensure that no more intersecting edges remain.
+            debug_assert_eq!(self.find_intersections(pa, px).len(), 0);
+
             // After this process there should be an unconstrained edge
             // between our two points. We need to change it to be a
             // constraint. We know an existing edge for pa, we just need
             // to loop around pa until we find one with the destination
             // px.
+            let constrained_edge;
             unsafe {
                 let initial_edge = self.qeds.edge_a_ref(pa_edge).target();
                 let mut edge = initial_edge;
-                loop {
+                constrained_edge = loop {
                     let first_point = self.qeds.edge_a_ref(edge).edge().point.point();
                     let other_point = self.qeds.edge_a_ref(edge).sym().edge().point.point();
                     assert_eq!(pa, first_point);
@@ -496,14 +538,14 @@ impl ConstrainedTriangulation {
                         println!("Setting {}-{} to constrained", pa, other_point);
                         self.qeds.edge_a_mut(edge).point.constraint = true;
                         self.qeds.edge_a_mut(edge.sym()).point.constraint = true;
-                        break;
+                        break edge;
                     } else {
                         edge = self.qeds.edge_a_ref(edge).onext().target();
                         if edge == initial_edge {
                             panic!("looped around ring");
                         }
                     }
-                }
+                };
             }
 
             if px == pb {
@@ -511,7 +553,7 @@ impl ConstrainedTriangulation {
             } else {
                 println!("setting pa to {}", px);
                 pa = px;
-                pa_edge = px_edge;
+                pa_edge = constrained_edge.sym();
             }
         }
         Some(())
@@ -529,15 +571,24 @@ impl ConstrainedTriangulation {
     /// This function accounts for the point lying on an existing edge or point.
     fn add_to_l_face(&mut self, edge_target: EdgeTarget, point: Point) -> EdgeTarget {
         unsafe {
+            println!("Point addition requested at: {}", point);
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
             if point_a == point {
                 // The point already lies on an existing point so just return
                 // that edge.
+                println!(
+                    "Point already exists at: {}",
+                    self.qeds.edge_a_ref(edge_target).edge().point.point()
+                );
                 edge_target
             } else if point_b == point {
                 // The point already lies on an existing point so just return
                 // that edge.
+                println!(
+                    "Point already exists at: {}",
+                    self.qeds.edge_a_ref(edge_target.sym()).edge().point.point()
+                );
                 edge_target.sym()
             } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
                 // The point lies on an edge, so we must invoke a procedure that
@@ -646,6 +697,14 @@ impl ConstrainedTriangulation {
             edge_target = self.qeds.edge_a_ref(base).oprev().target();
             let e = edge_target;
             self.retriangulate_suspect_edges(e, point, first);
+            debug_assert_eq!(
+                self.qeds.edge_a_ref(return_value).edge().point.point(),
+                point
+            );
+            println!(
+                "Point completed at: {}",
+                self.qeds.edge_a_ref(return_value).edge().point.point()
+            );
             return_value
         }
     }
@@ -715,6 +774,29 @@ impl ConstrainedTriangulation {
         let c = edge.l_next().edge().point.point;
         let d = edge.onext().sym().edge().point.point;
         del_test_ccw(a, b, c, d)
+    }
+
+    unsafe fn concave_test(&self, e: EdgeTarget) -> bool {
+        // Get the edge.
+        let edge = self.qeds.edge_a_ref(e);
+        // Get all of the vertices around this egdge in a CCW order.
+        let a = edge.oprev().edge().point.point;
+        let b = edge.r_prev().sym().edge().point.point;
+        let c = edge.l_next().edge().point.point;
+        let d = edge.onext().sym().edge().point.point;
+        if left_or_right(a, b, c) == Direction::Right {
+            return false;
+        }
+        if left_or_right(b, c, d) == Direction::Right {
+            return false;
+        }
+        if left_or_right(c, d, a) == Direction::Right {
+            return false;
+        }
+        if left_or_right(d, a, b) == Direction::Right {
+            return false;
+        }
+        true
     }
 
     /// Perform Delaunay swapping on the entire triangulation until complete.
