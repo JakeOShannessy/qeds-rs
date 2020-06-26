@@ -526,172 +526,59 @@ impl ConstrainedTriangulation {
         }
     }
 
-    /// This function accounts for the point lying on an existing edge.
-    fn add_to_l_face(&mut self, mut edge_target: EdgeTarget, point: Point) -> EdgeTarget {
+    /// This function accounts for the point lying on an existing edge or point.
+    fn add_to_l_face(&mut self, edge_target: EdgeTarget, point: Point) -> EdgeTarget {
         unsafe {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
-            let mut reinstate_as_constraint = false;
-            // println!("Edge Target: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
             if point_a == point {
-                return edge_target;
+                // The point already lies on an existing point so just return
+                // that edge.
+                edge_target
             } else if point_b == point {
-                return edge_target.sym();
+                // The point already lies on an existing point so just return
+                // that edge.
+                edge_target.sym()
             } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
-                println!(
-                    "Lies on edge: {} - {}",
-                    self.qeds.edge_a_ref(edge_target).edge().point.point(),
-                    self.qeds.edge_a_ref(edge_target).sym().edge().point.point()
-                );
-                {
-                    // We need to remember if this edge was constrained so
-                    // that we can reinstate it.
-                    let edge_target_ref = self.qeds.edge_a_ref(edge_target);
-                    reinstate_as_constraint = edge_target_ref.edge().point.constraint;
-                }
-                let oprev_ref = self.qeds.edge_a_ref(edge_target).oprev();
-                let oprev = oprev_ref.target();
-                drop(oprev_ref);
-
-                self.qeds.delete(edge_target);
-                edge_target = oprev;
+                // The point lies on an edge, so we must invoke a procedure that
+                // deletes and replaces that edge.
+                self.add_point_to_edge_unchecked(edge_target, point)
+            } else {
+                self.add_to_quad_unchecked(edge_target, point)
             }
-            let first = self.qeds.edge_a_ref(edge_target).edge().point.point;
-            let mut base = self
-                .qeds
-                .make_edge_with_a(Segment::new(first), Segment::new(point))
-                .target();
-            {
-                let base_ref = self.qeds.edge_a_ref(base);
-                println!(
-                    "Added Edge: {}-{}",
-                    self.qeds.edge_a_ref(base).edge().point.point(),
-                    self.qeds.edge_a_ref(base).sym().edge().point.point()
-                );
-                let this_is_constraint = reinstate_as_constraint
-                    && ((base_ref.sym().edge().point.point() == point_a
-                        || base_ref.sym().edge().point.point() == point_b
-                        || base_ref.sym().edge().point.point() == point)
-                        && (base_ref.edge().point.point() == point_a
-                            || base_ref.edge().point.point() == point_b
-                            || base_ref.edge().point.point() == point));
-                if this_is_constraint {
-                    println!(
-                        "Setting {}-{} as constraint",
-                        self.qeds.edge_a_ref(base).edge().point.point(),
-                        self.qeds.edge_a_ref(base).sym().edge().point.point()
-                    );
-                    // TODO: this constraint setting code is not of great design
-                    // and sorely needs checking.
-                    self.qeds.edge_a_mut(base).point.constraint = true;
-                    self.qeds.edge_a_mut(base.sym()).point.constraint = true;
-                }
-            }
-            let return_value = base.sym();
-            self.qeds.splice(base, edge_target);
-            loop {
-                let base_ref = self.connect(edge_target, base.sym());
-                println!(
-                    "Added Edge (Connect): {}-{}",
-                    base_ref.edge().point.point(),
-                    base_ref.sym().edge().point.point()
-                );
-                edge_target = base_ref.oprev().target();
-                base = base_ref.target();
-                let this_is_constraint = reinstate_as_constraint
-                    && ((base_ref.sym().edge().point.point() == point_a
-                        || base_ref.sym().edge().point.point() == point_b
-                        || base_ref.sym().edge().point.point() == point)
-                        && (base_ref.edge().point.point() == point_a
-                            || base_ref.edge().point.point() == point_b
-                            || base_ref.edge().point.point() == point));
-                if this_is_constraint {
-                    println!(
-                        "Setting {}-{} as constraint",
-                        self.qeds.edge_a_ref(base).edge().point.point(),
-                        self.qeds.edge_a_ref(base).sym().edge().point.point()
-                    );
-                    // TODO: this constraint setting code is not of great design
-                    // and sorely needs checking.
-                    self.qeds.edge_a_mut(base).point.constraint = true;
-                    self.qeds.edge_a_mut(base.sym()).point.constraint = true;
-                }
-                if self.qeds.edge_a(edge_target.sym()).point.point == first {
-                    break;
-                }
-            }
-            edge_target = self.qeds.edge_a_ref(base).oprev().target();
-            // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
-            let mut e = edge_target;
-            // println!("Start Swap Loop: first: {}", first);
-            loop {
-                let t = self.qeds.edge_a_ref(e).oprev().target();
-                let t_dest = self.qeds.edge_a_ref(t).sym().edge().point.point;
-                let e_dest = self.qeds.edge_a_ref(e).sym().edge().point.point;
-                let e_org = self.qeds.edge_a_ref(e).edge().point.point;
-                // print!("Inspecting Edge for swap: {} {} : [{},{},{},{}] : ", e_org, e_dest, e_org, t_dest, e_dest, point);
-                if self.qeds.edge_a_ref(e).edge().point.constraint
-                    != self.qeds.edge_a_ref(e).edge().point.constraint
-                {
-                    panic!("Error, inconsistent edge");
-                }
-                // TODO: we need to be cautious of infinite loops now that we're constrained.
-                if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
-                    && del_test_ccw(e_org, t_dest, e_dest, point)
-                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
-                    && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
-                {
-                    // println!("swap");
-                    print!(
-                        "Swapping: {}-{} (constraint status: {})",
-                        self.qeds.edge_a_ref(e).edge().point.point(),
-                        self.qeds.edge_a_ref(e).sym().edge().point.point(),
-                        self.qeds.edge_a_ref(e).edge().point.constraint
-                    );
-                    self.swap(e);
-                    println!(
-                        " To: {}-{} (constraint status: {})",
-                        self.qeds.edge_a_ref(e).edge().point.point(),
-                        self.qeds.edge_a_ref(e).sym().edge().point.point(),
-                        self.qeds.edge_a_ref(e).edge().point.constraint
-                    );
-                    // This is different from the algorithm in the paper
-                    e = self.qeds.edge_a_ref(e).oprev().target();
-                } else if e_org == first {
-                    // println!("end");
-                    break;
-                } else {
-                    // println!("don't swap");
-                    e = self.qeds.edge_a_ref(e).onext().l_prev().target();
-                }
-            }
-            return_value
         }
     }
 
-    fn add_point_to_edge(&mut self, mut edge_target: EdgeTarget, point: Point) -> EdgeTarget {
+    /// Add a point to a specified edge. If the point lies on one of the
+    /// vertices just add it there.
+    fn add_point_to_edge(&mut self, edge_target: EdgeTarget, point: Point) -> EdgeTarget {
         unsafe {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
-            println!(
-                "Adding point {} to edge {}-{} (which has a constraint status of {}-{})",
-                point,
-                point_a,
-                point_b,
-                self.qeds.edge_a_ref(edge_target).edge().point.constraint,
-                self.qeds
-                    .edge_a_ref(edge_target.sym())
-                    .edge()
-                    .point
-                    .constraint
-            );
-            let reinstate_as_constraint = self.qeds.edge_a_ref(edge_target).edge().point.constraint;
-            // println!("Edge Target: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
+
             if point_a == point {
-                return edge_target;
+                edge_target
             } else if point_b == point {
-                return edge_target.sym();
+                edge_target.sym()
+            } else {
+                self.add_point_to_edge_unchecked(edge_target, point)
             }
+        }
+    }
+
+    /// Same as [`add_point_to_edge`] but does not check if the point is on one
+    /// of the vertices of the edge. Will also restore constraints where
+    /// necessary.
+    fn add_point_to_edge_unchecked(
+        &mut self,
+        mut edge_target: EdgeTarget,
+        point: Point,
+    ) -> EdgeTarget {
+        unsafe {
+            let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
+            let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
+
+            let reinstate_as_constraint = self.qeds.edge_a_ref(edge_target).edge().point.constraint;
             {
                 println!("Getting constraint status");
                 // We need to remember if this edge was constrained so
@@ -707,92 +594,109 @@ impl ConstrainedTriangulation {
                 self.qeds.delete(edge_target);
                 edge_target = oprev;
             }
+            let return_value = self.add_to_quad_unchecked(edge_target, point);
+            // Now we need to restore the constraint status of the edges we
+            // deleted. The [`return_vale`] is one of the edges emenating from
+            // this new point, so if we just iterate around that point we should
+            // be able to find the edges we want to restore.
+            if reinstate_as_constraint {
+                println!("Looking for constraints to reinstate");
+                let mut edge = return_value;
+                loop {
+                    let edge_ref = self.qeds.edge_a_ref(edge);
+                    // Does the edge we're looking at have the correct points?
+                    let org = edge_ref.edge().point.point();
+                    let dest = edge_ref.sym().edge().point.point();
+                    println!("Inspecting for constraint restoration: {}-{}", org, dest);
+                    let has_points = (org == point_a || org == point_b || org == point)
+                        && (dest == point_a || dest == point_b || dest == point);
+                    if has_points {
+                        // TODO: this constraint setting code is not of great design
+                        // and sorely needs checking.
+                        self.qeds.edge_a_mut(edge).point.constraint = true;
+                        self.qeds.edge_a_mut(edge.sym()).point.constraint = true;
+                    }
+                    edge = self.qeds.edge_a_ref(edge).onext().target();
+                    if edge == return_value {
+                        break;
+                    }
+                }
+            }
+            return_value
+        }
+    }
+
+    fn add_to_quad_unchecked(&mut self, mut edge_target: EdgeTarget, point: Point) -> EdgeTarget {
+        unsafe {
             let first = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let mut base = self
                 .qeds
                 .make_edge_with_a(Segment::new(first), Segment::new(point))
                 .target();
-            {
-                let base_ref = self.qeds.edge_a_ref(base);
-                let this_is_constraint = reinstate_as_constraint
-                    && ((base_ref.sym().edge().point.point() == point_a
-                        || base_ref.sym().edge().point.point() == point_b
-                        || base_ref.sym().edge().point.point() == point)
-                        && (base_ref.edge().point.point() == point_a
-                            || base_ref.edge().point.point() == point_b
-                            || base_ref.edge().point.point() == point));
-                if this_is_constraint {
-                    // TODO: this constraint setting code is not of great design
-                    // and sorely needs checking.
-                    println!(
-                        "Constraint Set: {}-{}",
-                        self.qeds.edge_a_ref(base).edge().point.point(),
-                        self.qeds.edge_a_ref(base).sym().edge().point.point()
-                    );
-                    self.qeds.edge_a_mut(base).point.constraint = true;
-                    self.qeds.edge_a_mut(base.sym()).point.constraint = true;
-                }
-            }
             let return_value = base.sym();
             self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.connect(edge_target, base.sym());
-                println!(
-                    "Added Edge (Connect): {}-{}",
-                    base_ref.edge().point.point(),
-                    base_ref.sym().edge().point.point()
-                );
                 edge_target = base_ref.oprev().target();
                 base = base_ref.target();
-                if reinstate_as_constraint {
-                    println!("A constraint needs to be reinstated here");
-                }
-                let this_is_constraint = reinstate_as_constraint
-                    && ((base_ref.sym().edge().point.point() == point_a
-                        || base_ref.sym().edge().point.point() == point_b
-                        || base_ref.sym().edge().point.point() == point)
-                        && (base_ref.edge().point.point() == point_a
-                            || base_ref.edge().point.point() == point_b
-                            || base_ref.edge().point.point() == point));
-                if this_is_constraint {
-                    // TODO: this constraint setting code is not of great design
-                    // and sorely needs checking. TODO: restore these lines
-                    self.qeds.edge_a_mut(base).point.constraint = true;
-                    self.qeds.edge_a_mut(base.sym()).point.constraint = true;
-                }
                 if self.qeds.edge_a(edge_target.sym()).point.point == first {
                     break;
                 }
             }
             edge_target = self.qeds.edge_a_ref(base).oprev().target();
-            // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
-            let mut e = edge_target;
-            // println!("Start Swap Loop: first: {}", first);
-            loop {
-                let t = self.qeds.edge_a_ref(e).oprev().target();
-                let t_dest = self.qeds.edge_a_ref(t).sym().edge().point.point;
-                let e_dest = self.qeds.edge_a_ref(e).sym().edge().point.point;
-                let e_org = self.qeds.edge_a_ref(e).edge().point.point;
-                // print!("Inspecting Edge for swap: {} {} : [{},{},{},{}] : ", e_org, e_dest, e_org, t_dest, e_dest, point);
-
-                // TODO: we need to be cautious of infinite loops now that we're constrained.
-                if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
-                    && del_test_ccw(e_org, t_dest, e_dest, point)
-                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
-                    && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
-                {
-                    self.swap(e);
-                    // This is different from the algorithm in the papaer
-                    e = self.qeds.edge_a_ref(e).oprev().target();
-                } else if e_org == first {
-                    // println!("end");
-                    break;
-                } else {
-                    // println!("don't swap");
-                    e = self.qeds.edge_a_ref(e).onext().l_prev().target();
-                }
-            }
+            let e = edge_target;
+            self.retriangulate_suspect_edges(e, point, first);
             return_value
+        }
+    }
+
+    unsafe fn retriangulate_suspect_edges(
+        &mut self,
+        mut e: EdgeTarget,
+        point: Point,
+        first: Point,
+    ) {
+        // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
+        loop {
+            let t = self.qeds.edge_a_ref(e).oprev().target();
+            let t_dest = self.qeds.edge_a_ref(t).sym().edge().point.point;
+            let e_dest = self.qeds.edge_a_ref(e).sym().edge().point.point;
+            let e_org = self.qeds.edge_a_ref(e).edge().point.point;
+            // print!("Inspecting Edge for swap: {} {} : [{},{},{},{}] : ", e_org, e_dest, e_org, t_dest, e_dest, point);
+            if self.qeds.edge_a_ref(e).edge().point.constraint
+                != self.qeds.edge_a_ref(e).edge().point.constraint
+            {
+                panic!("Error, inconsistent edge");
+            }
+            // TODO: we need to be cautious of infinite loops now that we're constrained.
+            if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
+                && del_test_ccw(e_org, t_dest, e_dest, point)
+                && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
+                && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
+            {
+                // println!("swap");
+                print!(
+                    "Swapping: {}-{} (constraint status: {})",
+                    self.qeds.edge_a_ref(e).edge().point.point(),
+                    self.qeds.edge_a_ref(e).sym().edge().point.point(),
+                    self.qeds.edge_a_ref(e).edge().point.constraint
+                );
+                self.swap(e);
+                println!(
+                    " To: {}-{} (constraint status: {})",
+                    self.qeds.edge_a_ref(e).edge().point.point(),
+                    self.qeds.edge_a_ref(e).sym().edge().point.point(),
+                    self.qeds.edge_a_ref(e).edge().point.constraint
+                );
+                // This is different from the algorithm in the paper
+                e = self.qeds.edge_a_ref(e).oprev().target();
+            } else if e_org == first {
+                // println!("end");
+                break;
+            } else {
+                // println!("don't swap");
+                e = self.qeds.edge_a_ref(e).onext().l_prev().target();
+            }
         }
     }
 
