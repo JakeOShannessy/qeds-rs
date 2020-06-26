@@ -481,7 +481,6 @@ impl ConstrainedTriangulation {
             // to loop around pa until we find one with the destination
             // px.
             unsafe {
-                // pa_edge is not reset here
                 let initial_edge = self.qeds.edge_a_ref(pa_edge).target();
                 let mut edge = initial_edge;
                 loop {
@@ -535,7 +534,7 @@ impl ConstrainedTriangulation {
             } else if point_b == point {
                 return edge_target.sym();
             } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
-                // println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point,self.qeds.edge_a_ref(edge_target).sym().edge().point);
+                println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point.point(),self.qeds.edge_a_ref(edge_target).sym().edge().point.point());
                 {
                     // We need to remember if this edge was constrained so
                     // that we can reinstate it.
@@ -556,6 +555,7 @@ impl ConstrainedTriangulation {
                 .target();
             {
                 let base_ref = self.qeds.edge_a_ref(base);
+                println!("Added Edge: {}-{}", self.qeds.edge_a_ref(base).edge().point.point(),self.qeds.edge_a_ref(base).sym().edge().point.point());
                 let this_is_constraint = reinstate_as_constraint
                     && ((base_ref.sym().edge().point.point() == point_a
                         || base_ref.sym().edge().point.point() == point_b
@@ -575,6 +575,7 @@ impl ConstrainedTriangulation {
             self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.connect(edge_target, base.sym());
+                println!("Added Edge (Connect): {}-{}", base_ref.edge().point.point(),base_ref.sym().edge().point.point());
                 edge_target = base_ref.oprev().target();
                 base = base_ref.target();
                 let this_is_constraint = reinstate_as_constraint
@@ -600,15 +601,19 @@ impl ConstrainedTriangulation {
                 let e_dest = self.qeds.edge_a_ref(e).sym().edge().point.point;
                 let e_org = self.qeds.edge_a_ref(e).edge().point.point;
                 // print!("Inspecting Edge for swap: {} {} : [{},{},{},{}] : ", e_org, e_dest, e_org, t_dest, e_dest, point);
-
+                if self.qeds.edge_a_ref(e).edge().point.constraint != self.qeds.edge_a_ref(e).edge().point.constraint {
+                    panic!("Error, inconsistent edge");
+                }
                 // TODO: we need to be cautious of infinite loops now that we're constrained.
                 if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
                     && del_test_ccw(e_org, t_dest, e_dest, point)
-                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
+                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false) && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
                 {
                     // println!("swap");
+                    print!("Swapping: {}-{} (constraint status: {})", self.qeds.edge_a_ref(e).edge().point.point(), self.qeds.edge_a_ref(e).sym().edge().point.point(),self.qeds.edge_a_ref(e).edge().point.constraint);
                     self.swap(e);
-                    // This is different from the algorithm in the papaer
+                    println!(" To: {}-{} (constraint status: {})", self.qeds.edge_a_ref(e).edge().point.point(), self.qeds.edge_a_ref(e).sym().edge().point.point(), self.qeds.edge_a_ref(e).edge().point.constraint);
+                    // This is different from the algorithm in the paper
                     e = self.qeds.edge_a_ref(e).oprev().target();
                 } else if e_org == first {
                     // println!("end");
@@ -626,8 +631,7 @@ impl ConstrainedTriangulation {
         unsafe {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
-            println!(
-                "Adding point {} to edge {}-{} (which has a constraint status of {}-{})",
+            println!( "Adding point {} to edge {}-{} (which has a constraint status of {}-{})",
                 point,
                 point_a,
                 point_b,
@@ -677,6 +681,9 @@ impl ConstrainedTriangulation {
                 if this_is_constraint {
                     // TODO: this constraint setting code is not of great design
                     // and sorely needs checking.
+                    println!(
+                        "Constraint Set: {}-{}",
+                        self.qeds.edge_a_ref(base).edge().point.point(),self.qeds.edge_a_ref(base).sym().edge().point.point());
                     self.qeds.edge_a_mut(base).point.constraint = true;
                     self.qeds.edge_a_mut(base.sym()).point.constraint = true;
                 }
@@ -684,7 +691,8 @@ impl ConstrainedTriangulation {
             let return_value = base.sym();
             self.qeds.splice(base, edge_target);
             loop {
-                let base_ref = self.qeds.connect(edge_target, base.sym());
+                let base_ref = self.connect(edge_target, base.sym());
+                println!("Added Edge (Connect): {}-{}", base_ref.edge().point.point(),base_ref.sym().edge().point.point());
                 edge_target = base_ref.oprev().target();
                 base = base_ref.target();
                 if reinstate_as_constraint {
@@ -699,7 +707,7 @@ impl ConstrainedTriangulation {
                             || base_ref.edge().point.point() == point));
                 if this_is_constraint {
                     // TODO: this constraint setting code is not of great design
-                    // and sorely needs checking.
+                    // and sorely needs checking. TODO: restore these lines
                     self.qeds.edge_a_mut(base).point.constraint = true;
                     self.qeds.edge_a_mut(base.sym()).point.constraint = true;
                 }
@@ -721,9 +729,8 @@ impl ConstrainedTriangulation {
                 // TODO: we need to be cautious of infinite loops now that we're constrained.
                 if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
                     && del_test_ccw(e_org, t_dest, e_dest, point)
-                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
+                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)&& (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
                 {
-                    // println!("swap");
                     self.swap(e);
                     // This is different from the algorithm in the papaer
                     e = self.qeds.edge_a_ref(e).oprev().target();
@@ -852,6 +859,8 @@ impl ConstrainedTriangulation {
     }
 
     pub unsafe fn swap(&mut self, e: EdgeTarget) {
+        let a_is_constrained = self.qeds.edge_a_ref(e).edge().point.constraint;
+        let b_is_constrained = self.qeds.edge_a_ref(e).sym().edge().point.constraint;
         let a = self.qeds.edge_a_ref(e).oprev().target();
         let b = self.qeds.edge_a_ref(e).sym().oprev().target();
 
@@ -864,8 +873,10 @@ impl ConstrainedTriangulation {
         let b_lnext = self.qeds.edge_a_ref(b).l_next().target();
         self.qeds.splice(e.sym(), b_lnext);
 
-        let a_dest = self.qeds.edge_a_ref(a).sym().edge().point;
-        let b_dest = self.qeds.edge_a_ref(b).sym().edge().point;
+        let mut a_dest = self.qeds.edge_a_ref(a).sym().edge().point;
+        a_dest.constraint = a_is_constrained;
+        let mut b_dest = self.qeds.edge_a_ref(b).sym().edge().point;
+        b_dest.constraint = b_is_constrained;
         self.qeds.edge_a_mut(e).point = a_dest;
         self.qeds.edge_a_mut(e.sym()).point = b_dest;
     }
