@@ -206,7 +206,11 @@ impl ConstrainedTriangulation {
                         println!("It is to the left");
                         loop {
                             let next_edge = start.onext();
-                            println!( "looping next: {}-{}", next_edge.edge().point.point(), next_edge.sym().edge().point.point(), );
+                            println!(
+                                "looping next: {}-{}",
+                                next_edge.edge().point.point(),
+                                next_edge.sym().edge().point.point(),
+                            );
                             let next_dir = left_or_right(
                                 next_edge.edge().point.point(),
                                 next_edge.sym().edge().point.point(),
@@ -513,7 +517,7 @@ impl ConstrainedTriangulation {
         Some(())
     }
 
-    fn connect(&mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<Segment,()> {
+    fn connect(&mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<Segment, ()> {
         let e = self.qeds.connect(a, b).target();
         unsafe {
             self.qeds.edge_a_mut(e).point.constraint = false;
@@ -534,7 +538,11 @@ impl ConstrainedTriangulation {
             } else if point_b == point {
                 return edge_target.sym();
             } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
-                println!("Lies on edge: {} - {}", self.qeds.edge_a_ref(edge_target).edge().point.point(),self.qeds.edge_a_ref(edge_target).sym().edge().point.point());
+                println!(
+                    "Lies on edge: {} - {}",
+                    self.qeds.edge_a_ref(edge_target).edge().point.point(),
+                    self.qeds.edge_a_ref(edge_target).sym().edge().point.point()
+                );
                 {
                     // We need to remember if this edge was constrained so
                     // that we can reinstate it.
@@ -555,7 +563,11 @@ impl ConstrainedTriangulation {
                 .target();
             {
                 let base_ref = self.qeds.edge_a_ref(base);
-                println!("Added Edge: {}-{}", self.qeds.edge_a_ref(base).edge().point.point(),self.qeds.edge_a_ref(base).sym().edge().point.point());
+                println!(
+                    "Added Edge: {}-{}",
+                    self.qeds.edge_a_ref(base).edge().point.point(),
+                    self.qeds.edge_a_ref(base).sym().edge().point.point()
+                );
                 let this_is_constraint = reinstate_as_constraint
                     && ((base_ref.sym().edge().point.point() == point_a
                         || base_ref.sym().edge().point.point() == point_b
@@ -564,7 +576,11 @@ impl ConstrainedTriangulation {
                             || base_ref.edge().point.point() == point_b
                             || base_ref.edge().point.point() == point));
                 if this_is_constraint {
-                    println!("Setting {}-{} as constraint", self.qeds.edge_a_ref(base).edge().point.point(),self.qeds.edge_a_ref(base).sym().edge().point.point());
+                    println!(
+                        "Setting {}-{} as constraint",
+                        self.qeds.edge_a_ref(base).edge().point.point(),
+                        self.qeds.edge_a_ref(base).sym().edge().point.point()
+                    );
                     // TODO: this constraint setting code is not of great design
                     // and sorely needs checking.
                     self.qeds.edge_a_mut(base).point.constraint = true;
@@ -575,13 +591,26 @@ impl ConstrainedTriangulation {
             self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.connect(edge_target, base.sym());
-                println!("Added Edge (Connect): {}-{}", base_ref.edge().point.point(),base_ref.sym().edge().point.point());
+                println!(
+                    "Added Edge (Connect): {}-{}",
+                    base_ref.edge().point.point(),
+                    base_ref.sym().edge().point.point()
+                );
                 edge_target = base_ref.oprev().target();
                 base = base_ref.target();
                 let this_is_constraint = reinstate_as_constraint
-                    && ((base_ref.sym().edge().point.point() == point_a || base_ref.sym().edge().point.point() == point_b || base_ref.sym().edge().point.point() == point) && (base_ref.edge().point.point() == point_a || base_ref.edge().point.point() == point_b || base_ref.edge().point.point() == point));
+                    && ((base_ref.sym().edge().point.point() == point_a
+                        || base_ref.sym().edge().point.point() == point_b
+                        || base_ref.sym().edge().point.point() == point)
+                        && (base_ref.edge().point.point() == point_a
+                            || base_ref.edge().point.point() == point_b
+                            || base_ref.edge().point.point() == point));
                 if this_is_constraint {
-                    println!("Setting {}-{} as constraint", self.qeds.edge_a_ref(base).edge().point.point(),self.qeds.edge_a_ref(base).sym().edge().point.point());
+                    println!(
+                        "Setting {}-{} as constraint",
+                        self.qeds.edge_a_ref(base).edge().point.point(),
+                        self.qeds.edge_a_ref(base).sym().edge().point.point()
+                    );
                     // TODO: this constraint setting code is not of great design
                     // and sorely needs checking.
                     self.qeds.edge_a_mut(base).point.constraint = true;
@@ -601,18 +630,31 @@ impl ConstrainedTriangulation {
                 let e_dest = self.qeds.edge_a_ref(e).sym().edge().point.point;
                 let e_org = self.qeds.edge_a_ref(e).edge().point.point;
                 // print!("Inspecting Edge for swap: {} {} : [{},{},{},{}] : ", e_org, e_dest, e_org, t_dest, e_dest, point);
-                if self.qeds.edge_a_ref(e).edge().point.constraint != self.qeds.edge_a_ref(e).edge().point.constraint {
+                if self.qeds.edge_a_ref(e).edge().point.constraint
+                    != self.qeds.edge_a_ref(e).edge().point.constraint
+                {
                     panic!("Error, inconsistent edge");
                 }
                 // TODO: we need to be cautious of infinite loops now that we're constrained.
                 if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
                     && del_test_ccw(e_org, t_dest, e_dest, point)
-                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false) && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
+                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
+                    && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
                 {
                     // println!("swap");
-                    print!("Swapping: {}-{} (constraint status: {})", self.qeds.edge_a_ref(e).edge().point.point(), self.qeds.edge_a_ref(e).sym().edge().point.point(),self.qeds.edge_a_ref(e).edge().point.constraint);
+                    print!(
+                        "Swapping: {}-{} (constraint status: {})",
+                        self.qeds.edge_a_ref(e).edge().point.point(),
+                        self.qeds.edge_a_ref(e).sym().edge().point.point(),
+                        self.qeds.edge_a_ref(e).edge().point.constraint
+                    );
                     self.swap(e);
-                    println!(" To: {}-{} (constraint status: {})", self.qeds.edge_a_ref(e).edge().point.point(), self.qeds.edge_a_ref(e).sym().edge().point.point(), self.qeds.edge_a_ref(e).edge().point.constraint);
+                    println!(
+                        " To: {}-{} (constraint status: {})",
+                        self.qeds.edge_a_ref(e).edge().point.point(),
+                        self.qeds.edge_a_ref(e).sym().edge().point.point(),
+                        self.qeds.edge_a_ref(e).edge().point.constraint
+                    );
                     // This is different from the algorithm in the paper
                     e = self.qeds.edge_a_ref(e).oprev().target();
                 } else if e_org == first {
@@ -631,7 +673,8 @@ impl ConstrainedTriangulation {
         unsafe {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
-            println!( "Adding point {} to edge {}-{} (which has a constraint status of {}-{})",
+            println!(
+                "Adding point {} to edge {}-{} (which has a constraint status of {}-{})",
                 point,
                 point_a,
                 point_b,
@@ -683,7 +726,9 @@ impl ConstrainedTriangulation {
                     // and sorely needs checking.
                     println!(
                         "Constraint Set: {}-{}",
-                        self.qeds.edge_a_ref(base).edge().point.point(),self.qeds.edge_a_ref(base).sym().edge().point.point());
+                        self.qeds.edge_a_ref(base).edge().point.point(),
+                        self.qeds.edge_a_ref(base).sym().edge().point.point()
+                    );
                     self.qeds.edge_a_mut(base).point.constraint = true;
                     self.qeds.edge_a_mut(base.sym()).point.constraint = true;
                 }
@@ -692,7 +737,11 @@ impl ConstrainedTriangulation {
             self.qeds.splice(base, edge_target);
             loop {
                 let base_ref = self.connect(edge_target, base.sym());
-                println!("Added Edge (Connect): {}-{}", base_ref.edge().point.point(),base_ref.sym().edge().point.point());
+                println!(
+                    "Added Edge (Connect): {}-{}",
+                    base_ref.edge().point.point(),
+                    base_ref.sym().edge().point.point()
+                );
                 edge_target = base_ref.oprev().target();
                 base = base_ref.target();
                 if reinstate_as_constraint {
@@ -729,7 +778,8 @@ impl ConstrainedTriangulation {
                 // TODO: we need to be cautious of infinite loops now that we're constrained.
                 if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
                     && del_test_ccw(e_org, t_dest, e_dest, point)
-                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)&& (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
+                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
+                    && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
                 {
                     self.swap(e);
                     // This is different from the algorithm in the papaer
@@ -746,69 +796,8 @@ impl ConstrainedTriangulation {
         }
     }
 
-    fn retriangulate_l_face(&mut self, edge_target: EdgeTarget) {
-        unsafe { todo!() }
-    }
-
-    /// Assumes the EdgeTargets have already been put in the correct order.
-    pub unsafe fn add_external_point_ordered(
-        &mut self,
-        boundary_edges: Vec<EdgeTarget>,
-        point: Point,
-    ) {
-        let mut edges = boundary_edges.into_iter();
-        let (g, e) = {
-            let (a, b) = self.add_external_point(edges.next().unwrap(), point);
-            (a.target(), b.target())
-        };
-        for f in edges {
-            self.qeds.connect(e.sym(), f.sym());
-        }
-        self.boundary_edge = g;
-    }
-
-    pub unsafe fn add_external_point_unordered(
-        &mut self,
-        mut boundary_edges: Vec<EdgeTarget>,
-        point: Point,
-    ) {
-        // Reorder the edges so that their base points are CCW around the point.
-        boundary_edges.sort_by(|a, b| {
-            let pa = self.qeds.edge_a_ref(*a).edge().point.point;
-            let pb = self.qeds.edge_a_ref(*b).edge().point.point;
-            match left_or_right(point, pb, pa) {
-                Direction::Left => std::cmp::Ordering::Less,
-                Direction::Straight => std::cmp::Ordering::Equal,
-                Direction::Right => std::cmp::Ordering::Greater,
-            }
-        });
-        self.add_external_point_ordered(boundary_edges, point);
-    }
-
     pub fn boundary(&self) -> BoundaryIter<Segment, ()> {
         BoundaryIter::new(&self.qeds, self.boundary_edge)
-    }
-
-    pub unsafe fn add_external_point(
-        &mut self,
-        boundary_edge: EdgeTarget,
-        p: Point,
-    ) -> (EdgeRefA<Segment, ()>, EdgeRefA<Segment, ()>) {
-        let dest = self
-            .qeds
-            .edge_a_ref(boundary_edge)
-            .sym()
-            .edge()
-            .point
-            .point
-            .clone();
-        let e = self
-            .qeds
-            .make_edge_with_a(Segment::new(p), Segment::new(dest))
-            .target();
-        self.qeds.splice(e.sym(), boundary_edge.sym());
-        let f = self.qeds.connect(boundary_edge.sym(), e).target();
-        (self.qeds.edge_a_ref(f), self.qeds.edge_a_ref(e))
     }
 
     /// Determine whether an Edge (i.e. two NavTris) satisfies the Delaunay
@@ -1288,139 +1277,6 @@ mod tests {
         triangulation.add_point(p2);
         triangulation.add_point(p3);
         assert_eq!(triangulation.qeds().unwrap().quads.len(), 14);
-    }
-
-    #[test]
-    fn quad() {
-        let p1 = Point::new(0.0, 0.0);
-        let p2 = Point::new(5.0, 0.0);
-        let p3 = Point::new(2.5, 5.0);
-        let p4 = Point::new(5.0, 5.0);
-        // All the geometry data is set up here. This makes the whole thing
-        // static of course.
-        //
-        // Step 1. Create a Qeds data structure.
-        let mut qeds: Qeds<Point, ()> = Qeds::new();
-        // Step 2. Add the first two edges.
-        let q1 = qeds.make_edge_with_a(p1, p2).target;
-        let q2 = qeds.make_edge_with_a(p2, p3).target;
-        let q4 = qeds.make_edge_with_a(p4, p3).target;
-
-        // Step 4. Splice those edges together so that we actually have
-        // something of a network. This adds the third edge.
-        unsafe {
-            qeds.splice(q1.sym(), q2);
-            assert_eq!(qeds.edge_a_ref(q1).sym().onext().target, q2);
-            let e = qeds.connect(q2, q1).target();
-            // At this point the triangle has been created.
-            {
-                assert_eq!(qeds.edge_a_ref(q1).l_next().target, q2);
-                assert_eq!(qeds.edge_a(q1).point, p1);
-                assert_eq!(qeds.edge_a(q1.sym()).point, p2);
-                assert_eq!(qeds.edge_a_ref(q1).l_next().edge().point, p2);
-                assert_eq!(qeds.edge_a_ref(q1).l_next().sym().edge().point, p3);
-                assert_eq!(qeds.edge_a_ref(q1).l_next().l_next().edge().point, p3);
-                assert_eq!(qeds.edge_a_ref(EdgeTarget::new(3, 0, 0)).edge().point, p3);
-                assert_eq!(
-                    qeds.edge_a_ref(EdgeTarget::new(3, 0, 0)).sym().edge().point,
-                    p1
-                );
-                assert_eq!(qeds.edge_a_ref(q1).l_next().l_next().sym().edge().point, p1);
-            }
-
-            assert_eq!(qeds.edge_a_ref(e).onext().target, q2.sym());
-
-            // Now we want to splice on the fourth edge.
-            qeds.splice(q4.sym(), q2.sym());
-            // 1. dSymOnext == c
-            assert_eq!(qeds.edge_a_ref(q4).sym().onext().target(), e);
-            // 2. bSymOnext == dSym
-            assert_eq!(qeds.edge_a_ref(q2).sym().onext().target(), q4.sym());
-            // 3. dSymRotOnext == bRot
-            assert_eq!(qeds.edge_a_ref(q4).sym().rot().onext().target(), q2.rot());
-            // 4. cRotOnext == dRot
-            assert_eq!(qeds.edge_a_ref(e).rot().onext().target(), q4.rot());
-
-            // Now we add in the fifth edge, closing the quad.
-            qeds.connect(q2.sym(), q4);
-
-            // Check the first triangle face
-            assert_eq!(
-                qeds.edge_a_ref(q1).rot().sym().onext().target(),
-                q2.rot().sym()
-            );
-        }
-        unsafe {
-            // Get the first edge.
-            let edge = qeds.edge_a_ref(EdgeTarget::new(0, 0, 0));
-
-            println!(
-                "Edge1[{:?}]: {:?} -> {:?}",
-                edge.edge() as *const Edge<Point>,
-                edge.edge().point,
-                edge.sym().edge().point
-            );
-            println!(
-                "Edge2[{:?}]: {:?} -> {:?}",
-                edge.l_next().edge() as *const Edge<Point>,
-                edge.l_next().edge().point,
-                edge.l_next().sym().edge().point
-            );
-            println!(
-                "Edge3[{:?}]: {:?} -> {:?}",
-                edge.l_next().l_next().edge() as *const Edge<Point>,
-                edge.l_next().l_next().edge().point,
-                edge.l_next().l_next().sym().edge().point
-            );
-            println!(
-                "Edge4[{:?}]: {:?} -> {:?}",
-                edge.l_next().l_next().l_next().edge() as *const Edge<Point>,
-                edge.l_next().l_next().l_next().edge().point,
-                edge.l_next().l_next().l_next().sym().edge().point
-            );
-
-            assert_eq!(edge.l_next().target(), q2);
-            assert_eq!(edge.edge().point, p1);
-            assert_eq!(edge.sym().edge().point, p2);
-            assert_eq!(edge.l_next().edge().point, p2);
-            assert_eq!(edge.l_next().sym().edge().point, p3);
-            assert_eq!(edge.l_next().l_next().edge().point, p3);
-            assert_eq!(edge.l_next().l_next().sym().edge().point, p1);
-
-            // Get the face from it.
-            let face = edge.l_face();
-            // It should have 3 edges.
-            assert_eq!(face.edges.len(), 3);
-            let edge1 = qeds.base_edges().next().unwrap();
-            assert_eq!(edge1.l_face().edges.len(), 3);
-
-            let mut midpoints = Vec::new();
-            println!("looping through face");
-            for (edge, (p1, p2)) in face
-                .edges
-                .iter()
-                .zip(vec![(p2, p3), (p3, p1), (p1, p2)].into_iter())
-            {
-                println!(
-                    "Edge[]: {:?} -> {:?}",
-                    edge.edge().point,
-                    edge.sym().edge().point
-                );
-                assert_eq!(edge.edge().point, p1);
-                assert_eq!(edge.sym().edge().point, p2);
-                midpoints.push(edge.midpoint());
-            }
-            let mut centre = Point::new(0.0, 0.0);
-            let n = midpoints.len();
-            println!("midpoints: {:?}", midpoints);
-            for p in midpoints.into_iter() {
-                centre.x += p.x;
-                centre.y += p.y;
-            }
-            centre.x = centre.x / (n as f64);
-            centre.y = centre.y / (n as f64);
-            assert_eq!(centre, Point::new(2.5, 5.0 / 3.0))
-        }
     }
 
     #[test]

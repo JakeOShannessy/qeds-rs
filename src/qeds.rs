@@ -1,6 +1,6 @@
+use crate::point::*;
 use nalgebra::Matrix4;
 use slab::Slab;
-use crate::point::*;
 
 /// Determine whether a set of 4 points satisfies the Delaunay criterion. This
 /// assumes that the pointes are sorted in a CCW fashion.
@@ -1052,7 +1052,7 @@ impl<'a, AData, BData> FaceVerticesIter<'a, AData, BData> {
     }
 }
 
-impl<'a, AData:HasPoint, BData> Iterator for FaceVerticesIter<'a, AData, BData> {
+impl<'a, AData: HasPoint, BData> Iterator for FaceVerticesIter<'a, AData, BData> {
     type Item = Point;
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_index >= self.face.edges.len() {

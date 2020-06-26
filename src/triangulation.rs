@@ -1,11 +1,11 @@
+use crate::point::*;
+use crate::qeds::*;
 use nalgebra::Matrix4;
 use slab::Slab;
 use std::{
     collections::HashSet,
     fmt::{Display, Formatter},
 };
-use crate::point::*;
-use crate::qeds::*;
 
 #[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
@@ -477,7 +477,6 @@ fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
     a * d - b * c
 }
 
-
 pub fn has_edge(triangulation: &Triangulation, pa: Point, pb: Point) -> bool {
     get_edge(triangulation, pa, pb).is_some()
 }
@@ -501,7 +500,6 @@ pub fn get_edge(
     }
     None
 }
-
 
 #[cfg(test)]
 mod tests {
