@@ -73,6 +73,10 @@ impl ConstrainedTriangulation {
         }
     }
 
+    pub fn triangles(&self) -> TriangleIter {
+        TriangleIter::new(self)
+    }
+
     pub fn qeds(&self) -> Option<&Qeds<Segment, ()>> {
         Some(&self.qeds)
     }
@@ -865,6 +869,67 @@ impl ConstrainedTriangulation {
     }
 }
 
+
+pub struct TriangleIter<'a> {
+    triangulation: &'a ConstrainedTriangulation,
+    // slab_iter: slab::Iter<'a, Quad<Segment, ()>>,
+    next: EdgeTarget,
+}
+
+impl<'a> TriangleIter<'a> {
+    pub fn new(triangulation: &'a ConstrainedTriangulation) -> Self {
+        Self {
+            triangulation,
+            // We specifically skip edge 0 so as to not include the "infinite"
+            // triangle.
+            next: EdgeTarget::new(0,2,0),
+        }
+    }
+
+    fn inc(&mut self) {
+        if self.next.r == 0 {
+            self.next.r = 2;
+        } else {
+            self.next = EdgeTarget::new(self.next.e+1,0,0);
+        }
+    }
+}
+
+impl<'a> Iterator for TriangleIter<'a> {
+    type Item = EdgeRefA<'a, Segment, ()>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // First we check that the edge actually exists for this given
+            // EdgeTarget.
+            if self.triangulation.qeds.quads.contains(self.next.e) {
+                let edge_ref = unsafe {self.triangulation.qeds.edge_a_ref(self.next)};
+                self.inc();
+                let is_tri_canonical: bool = edge_ref.is_tri_canonical();
+                if is_tri_canonical {
+                    break Some(edge_ref);
+                }
+            } else {
+                self.inc();
+                if self.next.e >= self.triangulation.qeds.quads.len() {
+                    break None;
+                }
+            }
+        }
+    }
+}
+
+impl<'a, BData> EdgeRefA<'a, Segment, BData> {
+    /// An edge is the canonical edge for a tri iff it has the lowest e value
+    /// for the tri.
+    fn is_tri_canonical(&self) -> bool {
+        let current_e = self.target().e;
+        let next_edge = self.sym_rot().onext();
+        let next_e = next_edge.target().e;
+        let second_e = next_edge.onext().target().e;
+        (current_e < next_e) && (current_e < second_e)
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialOrd, PartialEq)]
 pub struct Triangle {
     /// The minimum bounding point.
@@ -1008,6 +1073,13 @@ mod tests {
         let mut triangulation = ConstrainedTriangulation::new();
         let p1 = Point::new(0.0, 0.0);
         triangulation.add_point(p1);
+    }
+
+    #[test]
+    fn empty_triangulation() {
+        let triangulation = ConstrainedTriangulation::new();
+        let tris: Vec<EdgeRefA<Segment,()>> = triangulation.triangles().collect();
+        assert_eq!(tris.len(), 2);
     }
 
     #[test]
