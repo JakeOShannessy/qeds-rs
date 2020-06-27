@@ -385,25 +385,15 @@ impl ConstrainedTriangulation {
     }
 
     pub fn add_constraint(&mut self, mut pa: Point, mut pb: Point) -> Option<()> {
-        let mut pa_edge;
         unsafe {
-            // println!("Attempting to insert constraint from {} to {}", pa, pb);
             pb = {
                 let pb_edge = self.add_point(pb)?;
                 self.qeds.edge_a_ref(pb_edge).edge().point.point()
             };
-            pa_edge = self.add_point(pa)?;
-            {
-                // TODO: how do we find a stable edge reference to pa? One method
-                // would be to not yet insert pb.
-                let pa_temp = self.qeds.edge_a_ref(pa_edge).edge().point.point();
-                // println!("Point a is {}", pa_temp);
-            }
+            let pa_edge = self.add_point(pa)?;
             // Its possible that pa_edge is swapped out from underneath us.
 
             pa = self.qeds.edge_a_ref(pa_edge).edge().point.point();
-            // println!("Point a is {}", pa);
-            // println!("Point b is {}", pb);
         }
 
         if pa == pb {
@@ -457,7 +447,7 @@ impl ConstrainedTriangulation {
                                 (pa, pb),
                             ) {
                                 IntersectionResult::Parallel => panic!("unexpected parallel"),
-                                IntersectionResult::LineIntersection(t, u) => {
+                                IntersectionResult::LineIntersection(t, _u) => {
                                     let p = e.edge().point.point();
                                     let r = e.sym().edge().point.point() - p;
                                     Point::new(p.x + t * r.x, p.y + t * r.y)
@@ -523,9 +513,6 @@ impl ConstrainedTriangulation {
                         unsafe {
                             // Swap the unconstrained edge.
                             {
-                                if pa_edge == s_e {
-                                    panic!("This is where the issue starts, we should find a new pa_edge");
-                                }
                                 self.swap(s_e);
                             }
                         }
@@ -543,7 +530,6 @@ impl ConstrainedTriangulation {
             // constraint. We know an existing edge for pa, we just need
             // to loop around pa until we find one with the destination
             // px.
-            let constrained_edge;
             unsafe {
                 // TODO: this fundamental assuption seems broken. A lot of
                 // swapping has occured since then, so it's not unreasonable for
@@ -553,7 +539,7 @@ impl ConstrainedTriangulation {
                 // This is the only place pa_edge is used.
                 let initial_edge = self.qeds.edge_a_ref(px_edge).target();
                 let mut edge = initial_edge;
-                constrained_edge = loop {
+                loop {
                     let first_point = self.qeds.edge_a_ref(edge).edge().point.point();
                     let other_point = self.qeds.edge_a_ref(edge).sym().edge().point.point();
                     assert_eq!(px, first_point);
@@ -575,9 +561,7 @@ impl ConstrainedTriangulation {
             if px == pb {
                 break;
             } else {
-                // println!("setting pa to {}", px);
                 pa = px;
-                pa_edge = constrained_edge.sym();
             }
         }
         Some(())
@@ -1437,23 +1421,23 @@ pub enum IntersectionResult {
 
 fn segment_intersection(s1: (Point, Point), s2: (Point, Point)) -> IntersectionResult {
     let p = s1.0;
-    let rAbs = s1.1;
+    let r_abs = s1.1;
     let q = s2.0;
-    let sAbs = s2.1;
+    let s_abs = s2.1;
     // line1 t = p + t*r
     // line2 r = q + u*s
-    let r = rAbs - p;
-    let s = sAbs - q;
+    let r = r_abs - p;
+    let s = s_abs - q;
 
     // Sometimes we get numerical errors when the points coincide, so we
     // check for that first
     let t = if p == q {
         0.0
-    } else if p == sAbs {
+    } else if p == s_abs {
         0.0
-    } else if rAbs == q {
+    } else if r_abs == q {
         1.0
-    } else if rAbs == sAbs {
+    } else if r_abs == s_abs {
         1.0
     } else {
         cross(q - p, s) / cross(r, s)
@@ -1461,11 +1445,11 @@ fn segment_intersection(s1: (Point, Point), s2: (Point, Point)) -> IntersectionR
 
     let u = if q == p {
         0.0
-    } else if q == rAbs {
+    } else if q == r_abs {
         0.0
-    } else if sAbs == p {
+    } else if s_abs == p {
         1.0
-    } else if sAbs == rAbs {
+    } else if s_abs == r_abs {
         1.0
     } else {
         cross(q - p, r) / cross(r, s)

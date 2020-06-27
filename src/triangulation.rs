@@ -1,11 +1,6 @@
 use crate::point::*;
 use crate::qeds::*;
 use nalgebra::Matrix4;
-use slab::Slab;
-use std::{
-    collections::HashSet,
-    fmt::{Display, Formatter},
-};
 
 #[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
