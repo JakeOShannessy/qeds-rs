@@ -1068,7 +1068,6 @@ impl<'a, AData: HasPoint, BData> Iterator for FaceVerticesIter<'a, AData, BData>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn bad_collinear() {

@@ -499,7 +499,6 @@ pub fn get_edge(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[test]
     fn bad_collinear() {
