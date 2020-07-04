@@ -890,14 +890,42 @@ impl ConstrainedTriangulation {
         // Create a map which contains all of our triangle information. The key
         // is the EdgeTarget.
         let mut tri_info: HashMap<EdgeTarget, TriInfo> = HashMap::new();
-        let queue = self.abstract_01(&mut tri_info, &mut component);
-        for triangle in queue {
+        let mut queue = self.abstract_01(&mut tri_info, &mut component);
+        println!("Remaining Triangles: {:?}", queue);
+        for triangle in queue.iter() {
             let n = triangle.n_constrained_edges();
             let m = triangle.num_adjacent_level(&tri_info, Level::L1);
             let this_tri_info = tri_info.get(&triangle.target());
             if n + m == 0 && this_tri_info.is_none() {
-                self.abstract_3(&mut tri_info, triangle, &mut component);
+                self.abstract_3(&mut tri_info, *triangle, &mut component);
                 component = NonZeroUsize::new(component.get() + 1).unwrap();
+            }
+        }
+        while let Some(triangle) = queue.pop_front() {
+            if tri_info.get(&triangle.target()).is_none() {
+                let mut triangle_current = Some(triangle);
+                while triangle_current.is_some() {
+                    tri_info.insert(triangle_current.unwrap().target(), TriInfo {
+                        level: Level::L2,
+                        component: None,
+                    });
+                    let mut triangle_next = None;
+                    let tri_edges: Vec<EdgeTarget> = triangle_current.unwrap().l_face() .edges .clone() .into_iter() .map(|x| x.target()) .collect();
+                    for edge in tri_edges.into_iter() {
+                        let edge = unsafe { self.qeds.edge_a_ref(edge) };
+                        let triangle_temp = edge.triangle_across();
+                        if edge.edge().point.constraint || tri_info.get(&triangle_temp.target()).map(|info| info.level == Level::L1).unwrap_or(false) {
+                            if !edge.edge().point.constraint {
+                                self.collapse_rooted_tree(&mut tri_info, triangle_current.unwrap(), triangle_temp);
+                            }
+                        } else {
+                            if tri_info.get(&triangle_temp.target()).is_none() {
+                                triangle_next = Some(triangle_temp);
+                            }
+                        }
+                    }
+                    triangle_current = triangle_next;
+                }
             }
         }
         LinkageMap::new(tri_info)
@@ -1146,13 +1174,7 @@ impl ConstrainedTriangulation {
                         let mut edge_next;
                         let mut edge_last;
                         let tri_current = triangle_current.unwrap();
-                        let tri_edges: Vec<EdgeTarget> = tri_current
-                            .l_face()
-                            .edges
-                            .clone()
-                            .into_iter()
-                            .map(|x| x.target())
-                            .collect();
+                        let tri_edges: Vec<EdgeTarget> = tri_current .l_face() .edges .clone() .into_iter() .map(|x| x.target()) .collect();
                         for edge in tri_edges.into_iter() {
                             let edge = unsafe { self.qeds.edge_a_ref(edge) };
                             let triangle_temp = edge.triangle_across();
@@ -1627,7 +1649,7 @@ mod tests {
         triangulation.add_constraint(p3, p1);
         assert_eq!(triangulation.triangles().count(), 8);
         let tri_info = triangulation.classify_triangles();
-        assert_eq!(tri_info.ns(),(1,0,0,0));
+        assert_eq!(tri_info.ns(),(1,0,7,0));
         for (target, info) in tri_info.0 {
             println!("EdgeTarget: {:?} Info: {:?}", target, info);
         }
@@ -1647,7 +1669,7 @@ mod tests {
         // 10 triangles, 2 from the quad and 8 from the bounding box.
         assert_eq!(triangulation.triangles().count(), 10);
         let tri_info = triangulation.classify_triangles();
-        assert_eq!(tri_info.ns(),(0,2,0,0));
+        assert_eq!(tri_info.ns(),(0,2,8,0));
         for (target, info) in tri_info.0 {
             println!("EdgeTarget: {:?} Info: {:?}", target, info);
         }
