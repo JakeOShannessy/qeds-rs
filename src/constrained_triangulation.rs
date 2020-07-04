@@ -54,21 +54,25 @@ impl ConstrainedTriangulation {
         let ne = Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0);
         let nw = Point::new(SafeFloat::MIN.0, SafeFloat::MAX.0);
         let south = qeds
-            .make_edge_with_a(Segment::new(sw), Segment::new(se))
+            .make_edge_with_a(Segment::new_constraint(se), Segment::new_constraint(sw))
+            .sym()
             .target();
         let east = qeds
-            .make_edge_with_a(Segment::new(se), Segment::new(ne))
+            .make_edge_with_a(Segment::new_constraint(se), Segment::new_constraint(ne))
             .target();
         let north = qeds
-            .make_edge_with_a(Segment::new(ne), Segment::new(nw))
+            .make_edge_with_a(Segment::new_constraint(ne), Segment::new_constraint(nw))
             .target();
         unsafe {
             qeds.splice(east, south.sym());
             let centre = qeds.connect(east, south).target();
+            qeds.edge_a_mut(centre).point.constraint = false;
+            qeds.edge_a_mut(centre.sym()).point.constraint = false;
 
             qeds.splice(north, east.sym());
-            qeds.connect(north, centre.sym()).target();
-
+            let west = qeds.connect(north, centre.sym()).target();
+            qeds.edge_a_mut(west).point.constraint = true;
+            qeds.edge_a_mut(west.sym()).point.constraint = true;
             ConstrainedTriangulation {
                 qeds,
                 boundary_edge: south,
@@ -881,7 +885,7 @@ impl ConstrainedTriangulation {
         false
     }
 
-    pub fn classify_triangles(&self) {
+    pub fn classify_triangles(&self) -> LinkageMap {
         let mut component: NonZeroUsize = NonZeroUsize::new(1).unwrap();
         // Create a map which contains all of our triangle information. The key
         // is the EdgeTarget.
@@ -896,6 +900,7 @@ impl ConstrainedTriangulation {
                 component = NonZeroUsize::new(component.get() + 1).unwrap();
             }
         }
+        LinkageMap::new(tri_info)
     }
 
     fn collapse_rooted_tree(
@@ -943,28 +948,37 @@ impl ConstrainedTriangulation {
         triangle: EdgeRefA<Segment, ()>,
         component: &mut NonZeroUsize,
     ) {
+        println!("Running collapse_unrooted_tree for {:?}", triangle.target());
         let mut s: Vec<EdgeRefA<Segment, ()>> = Vec::new();
         s.push(triangle);
         while let Some(triangle) = s.pop() {
             // Set the component of this triangle to the current component.
+            println!("getting tri_info for {:?}", triangle.target());
             let this_tri_info = tri_info.get_mut(&triangle.target()).unwrap();
             this_tri_info.component = Some(*component);
+            println!("Component for {:?} set to {}", triangle.target(), component);
             for edge in triangle.l_face().edges {
+                println!("Examining: {}-{}", edge.edge().point.point(), edge.sym().edge().point.point());
                 if edge.edge().point.constraint {
+                    println!("is constraint");
                 } else {
+                    println!("is not constraint");
                     let next_triangle = {
                         let connected_edge = unsafe { self.qeds.edge_a_ref(edge.sym().target()) };
                         // Find the canonical edge of this triangle.
                         let canonical_edge = connected_edge.get_tri_canonical();
                         canonical_edge
                     };
+                    println!("NextEdge: {}-{}", next_triangle.edge().point.point(), next_triangle.sym().edge().point.point());
                     let next_tri_info = tri_info.get(&next_triangle.target());
                     let next_tri_component = next_tri_info.and_then(|x| x.component);
+                    println!("Component for {:?} is {:?}", next_triangle.target(), next_tri_component);
                     if next_tri_component.is_none() {
                         s.push(next_triangle);
                     }
                 }
             }
+            println!("S: {}", s.len());
         }
     }
 
@@ -977,10 +991,13 @@ impl ConstrainedTriangulation {
         let mut q: VecDeque<EdgeRefA<Segment, ()>> = VecDeque::new();
         // r is the second queue, for all other tris we are yet to process.
         let mut r: VecDeque<EdgeRefA<Segment, ()>> = VecDeque::new();
+        println!("There are {} triangles", self.triangles().count());
         for triangle in self.triangles() {
+            println!("{:?} has {} constraints", triangle.target(), triangle.n_constrained_edges());
             // How many constrained edges does this triangle have?.
             let n_constraints = triangle.n_constrained_edges();
             if n_constraints == 3 {
+                println!("Found L0: {}-{}-{}", triangle.edge().point.point(), triangle.l_next().edge().point.point(), triangle.l_next().l_next().edge().point.point());
                 // We have found an L0 island. We can therefore give it its own
                 // component number and we are finished with this triangle.
                 tri_info.insert(
@@ -1011,12 +1028,14 @@ impl ConstrainedTriangulation {
                 // Find the unconstrained edge and add the triangle that is
                 // across this edge to first queue.
                 for edge in triangle.l_face().edges {
-                    if edge.edge().point.constraint {
-                        // This edge is a constraint. Get the edge that is on
-                        // the connected triangle. This is simply eSym.
-                        let connected_edge = unsafe { self.qeds.edge_a_ref(edge.sym().target()) };
-                        // Find the canonical edge of this triangle.
-                        let canonical_edge = connected_edge.get_tri_canonical();
+                    // This edge is a constraint. Get the edge that is on
+                    // the connected triangle. This is simply eSym.
+                    let connected_edge = unsafe { self.qeds.edge_a_ref(edge.sym().target()) };
+                    // Find the canonical edge of this triangle.
+                    let canonical_edge = connected_edge.get_tri_canonical();
+                    // We only add it to q if we haven't already assigned it a level.
+                    if !edge.edge().point.constraint && tri_info.get(&canonical_edge.target()).is_none() {
+                        println!("adding {:?} to q", canonical_edge.target());
                         q.push_back(canonical_edge);
                         break;
                     }
@@ -1032,7 +1051,6 @@ impl ConstrainedTriangulation {
             println!("Triangle: {:?}", triangle.target());
         }
         println!("q[{}]: {:?}", q.len(), q);
-        // We should not have any "infinite" triangles.
         println!("r[{}]: {:?}", r.len(), r);
         // All of the triangles are on the pile or in the queues. We now cycle
         // through the first queue. First we pop a triangle off the front of the
@@ -1041,9 +1059,8 @@ impl ConstrainedTriangulation {
             // If we don't know the level of this triangle, we must determine
             // it.
             let n_l1s = triangle.num_adjacent_level(tri_info, Level::L1);
-            // TODO: This if statement definitely seems to be wrong. It shouldn't even
-            // be necessary, and if it was it would be the reverse.
             if let Some(this_tri_info) = tri_info.get_mut(&triangle.target()) {
+                println!("TriInfo for {:?} is {:?}", triangle.target(), this_tri_info);
                 // How many of the edges of this triangle are constrained?
                 let n_constraints = triangle.n_constrained_edges();
                 // How any of the adjacent triangles (i.e. across an
@@ -1055,8 +1072,11 @@ impl ConstrainedTriangulation {
                     // edge is unconstrained and the level of the triangle is
                     // not set.
                     for edge in triangle.l_face().edges {
-                        let next_triangle = edge.sym();
+                        let next_triangle = edge.sym().get_tri_canonical();
                         let next_triangle_info = tri_info.get(&next_triangle.target());
+                        if !edge.edge().point.constraint {
+                            println!("NextTriInfo for {:?} is {:?}", next_triangle.target(), next_triangle_info);
+                        }
                         if !edge.edge().point.constraint && next_triangle_info.is_none() {
                             let next_triangle =
                                 unsafe { self.qeds.edge_a_ref(next_triangle.target()) }
@@ -1070,6 +1090,7 @@ impl ConstrainedTriangulation {
                     *component = NonZeroUsize::new(component.get() + 1).unwrap();
                 }
             }
+            println!("q[{}]: {:?}", q.len(), q);
         }
         r
     }
@@ -1166,6 +1187,30 @@ impl ConstrainedTriangulation {
     }
 }
 
+pub struct LinkageMap(HashMap<EdgeTarget, TriInfo>);
+
+impl LinkageMap {
+    pub fn new(map: HashMap<EdgeTarget, TriInfo>) -> Self {
+        LinkageMap(map)
+    }
+
+    pub fn ns(&self) -> (usize,usize,usize,usize) {
+        let mut n_l0 = 0;
+        let mut n_l1 = 0;
+        let mut n_l2 = 0;
+        let mut n_l3 = 0;
+        for (k,v) in self.0.iter() {
+            match v.level {
+                Level::L0 => n_l0 += 1,
+                Level::L1 => n_l1 += 1,
+                Level::L2 => n_l2 += 1,
+                Level::L3 => n_l3 += 1,
+            }
+        }
+        (n_l0,n_l1,n_l2,n_l3)
+    }
+}
+
 impl<'a> EdgeRefA<'a, Segment, ()> {
     fn triangle_across(&self) -> Self {
         let edge_on_next_tri = self.sym();
@@ -1218,9 +1263,10 @@ impl<'a> EdgeRefA<'a, Segment, ()> {
     }
 }
 
-struct TriInfo {
-    level: Level,
-    component: Option<NonZeroUsize>,
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct TriInfo {
+    pub level: Level,
+    pub component: Option<NonZeroUsize>,
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -1253,7 +1299,8 @@ impl<'a> TriangleIter<'a> {
     pub fn new(triangulation: &'a ConstrainedTriangulation) -> Self {
         Self {
             triangulation,
-            next: EdgeTarget::new(0, 0, 0),
+            // We skip zero because that is the edge for the infinite triangle. (TODO: currently it is e0r2f0);
+            next: EdgeTarget::new(0, 2, 0),
         }
     }
 
@@ -1276,10 +1323,7 @@ impl<'a> Iterator for TriangleIter<'a> {
                 let edge_ref = unsafe { self.triangulation.qeds.edge_a_ref(self.next) };
                 self.inc();
                 let is_tri_canonical: bool = edge_ref.is_tri_canonical();
-                // We also only consider real triangles (i.e. triangles made
-                // from constraints).
-                let is_tri_real = edge_ref.is_tri_real();
-                if is_tri_canonical && is_tri_real {
+                if is_tri_canonical {
                     break Some(edge_ref);
                 }
             } else {
@@ -1305,8 +1349,9 @@ impl<'a, BData> EdgeRefA<'a, Segment, BData> {
 
     fn is_tri_real(&self) -> bool {
         for edge in self.l_face().edges {
-            if !edge.edge().point.constraint {
-                return false;
+            match edge.target().e {
+                0|1|2|4 => return false,
+                _ => (),
             }
         }
         true
@@ -1475,15 +1520,18 @@ mod tests {
     fn empty_triangulation() {
         let triangulation = ConstrainedTriangulation::new();
         let tris: Vec<EdgeRefA<Segment, ()>> = triangulation.triangles().collect();
-        assert_eq!(tris.len(), 0);
-        triangulation.classify_triangles();
+        assert_eq!(tris.len(), 2);
+        let tri_info = triangulation.classify_triangles();
+        for (target, info) in tri_info.0 {
+            println!("EdgeTarget: {:?} Info: {:?}", target, info);
+        }
     }
 
     #[test]
     fn one_point_triangulation_location() {
         let mut triangulation = ConstrainedTriangulation::new();
         // assert_eq!(triangulation.qeds().unwrap().quads.len(), 5);
-        let south = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(0, 0, 0)) };
+        let south = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(0, 2, 0)) };
         assert_eq!(
             south.edge().point.point,
             Point::new(SafeFloat::MIN.0, SafeFloat::MIN.0)
@@ -1577,11 +1625,32 @@ mod tests {
         triangulation.add_constraint(p1, p2);
         triangulation.add_constraint(p2, p3);
         triangulation.add_constraint(p3, p1);
-        for tri in triangulation.triangles() {
-            println!("Triangle: {:?}", tri);
+        assert_eq!(triangulation.triangles().count(), 8);
+        let tri_info = triangulation.classify_triangles();
+        assert_eq!(tri_info.ns(),(1,0,0,0));
+        for (target, info) in tri_info.0 {
+            println!("EdgeTarget: {:?} Info: {:?}", target, info);
         }
-        assert_eq!(triangulation.triangles().count(), 1);
-        triangulation.classify_triangles();
+    }
+
+    #[test]
+    fn quad_triangulation() {
+        let mut triangulation = ConstrainedTriangulation::new();
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(5.0, 0.10);
+        let p3 = Point::new(2.5, 5.1);
+        let p4 = Point::new(5.0, 5.0);
+        triangulation.add_constraint(p1, p2);
+        triangulation.add_constraint(p3, p1);
+        triangulation.add_constraint(p4, p2);
+        triangulation.add_constraint(p4, p3);
+        // 10 triangles, 2 from the quad and 8 from the bounding box.
+        assert_eq!(triangulation.triangles().count(), 10);
+        let tri_info = triangulation.classify_triangles();
+        assert_eq!(tri_info.ns(),(0,2,0,0));
+        for (target, info) in tri_info.0 {
+            println!("EdgeTarget: {:?} Info: {:?}", target, info);
+        }
     }
 
     #[test]
@@ -1884,7 +1953,7 @@ mod tests {
             .iter()
             .filter(|(_i, q)| q.edges_a[0].point.constraint)
             .count();
-        assert_eq!(n_constraints, 5);
+        assert_eq!(n_constraints, 9);
     }
 }
 
