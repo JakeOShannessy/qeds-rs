@@ -622,7 +622,7 @@ mod tests {
     }
 
     fn valid_triangulation(triangulation: &Triangulation) {
-        for (i, quad) in triangulation.qeds().unwrap().quads.iter() {
+        for (i, _quad) in triangulation.qeds().unwrap().quads.iter() {
             let target1 = EdgeTarget::new(i, 0, 0);
             let target2 = EdgeTarget::new(i, 2, 0);
             unsafe {
@@ -684,10 +684,10 @@ mod tests {
         let p1 = Point::new(0.0, 0.0);
         let p2 = Point::new(10.0, 1.0);
         let p3 = Point::new(5.0, 10.0);
-        let p4 = Point::new(11.0, 11.0);
-        let p5 = Point::new(15.0, 2.5);
-        let p6 = Point::new(12.0, 12.5);
-        let p7 = Point::new(15.0, 12.5);
+        // let p4 = Point::new(11.0, 11.0);
+        // let p5 = Point::new(15.0, 2.5);
+        // let p6 = Point::new(12.0, 12.5);
+        // let p7 = Point::new(15.0, 12.5);
         triangulation.add_point(p1);
         triangulation.add_point(p2);
         triangulation.add_point(p3);
