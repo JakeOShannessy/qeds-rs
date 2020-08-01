@@ -853,7 +853,7 @@ impl ConstrainedTriangulation {
                     tri_info.insert(
                         triangle_current.unwrap().target(),
                         TriInfo {
-                            level: Level::L2,
+                            level: LevelInfo::L2(None,None),
                             component: Some(component),
                         },
                     );
@@ -872,7 +872,7 @@ impl ConstrainedTriangulation {
                         if edge.edge().point.constraint
                             || tri_info
                                 .get(&triangle_temp.target())
-                                .map(|info| info.level == Level::L1)
+                                .map(|info| info.level.as_level() == Level::L1)
                                 .unwrap_or(false)
                         {
                             if !edge.edge().point.constraint {
@@ -905,11 +905,11 @@ impl ConstrainedTriangulation {
     ) {
         assert!(tri_info
             .get(&r.target())
-            .map(|info| info.level == Level::L2)
+            .map(|info| info.level.as_level() == Level::L2)
             .unwrap_or(false));
         assert!(tri_info
             .get(&t.target())
-            .map(|info| info.level == Level::L1)
+            .map(|info| info.level.as_level() == Level::L1)
             .unwrap_or(false));
         let component = tri_info.get(&r.target()).unwrap().component.unwrap();
         let mut s = Vec::new();
@@ -917,10 +917,17 @@ impl ConstrainedTriangulation {
         let mut a = Vec::new();
         a.push(0);
         while let Some(triangle_current) = s.pop() {
-            tri_info
-                .get_mut(&triangle_current.target())
-                .unwrap()
-                .component = Some(component);
+            {
+                let tri_info_mut = tri_info.get_mut(&triangle_current.target()).unwrap();
+                // Set the component of the current triangle
+                tri_info_mut.component = Some(component);
+                // Get a mutable reference to Level 1 adjacency info
+                if let LevelInfo::L1(ref mut s) = tri_info_mut.level {
+                    *s = Some(r.target());
+                } else {
+                    panic!("incorrect level, should only be considering L1 triangles")
+                }
+            }
             for edge in triangle_current
                 .l_face()
                 .edges
@@ -1044,7 +1051,7 @@ impl ConstrainedTriangulation {
                 tri_info.insert(
                     triangle.target(),
                     TriInfo {
-                        level: Level::L0,
+                        level: LevelInfo::L0,
                         component: Some(*component),
                     },
                 );
@@ -1057,7 +1064,7 @@ impl ConstrainedTriangulation {
                 tri_info.insert(
                     triangle.target(),
                     TriInfo {
-                        level: Level::L1,
+                        level: LevelInfo::L1(None),
                         component: None,
                     },
                 );
@@ -1105,7 +1112,7 @@ impl ConstrainedTriangulation {
                     tri_info.insert(
                         triangle.target(),
                         TriInfo {
-                            level: Level::L1,
+                            level: LevelInfo::L1(None),
                             component: None,
                         },
                     );
@@ -1146,7 +1153,7 @@ impl ConstrainedTriangulation {
             tri_info.insert(
                 triangle_base.target(),
                 TriInfo {
-                    level: Level::L3,
+                    level: LevelInfo::L3(None,None,None),
                     component: Some(*component),
                 },
             );
@@ -1172,17 +1179,23 @@ impl ConstrainedTriangulation {
                         .unwrap()
                         .num_adjacent_level(tri_info, Level::L1);
                     if n + m == 0 {
+                        // How is it possible that we don't know the current level or anything?
                         if tri_info.get(&triangle_current.unwrap().target()).is_none() {
                             q.push_back(triangle_current.unwrap());
                         }
-                        // TODO: do we need to do base_adjacent?
+                        // TODO: we need to set the adjaceny, but we don't know
+                        // enough yet.
+                        // {
+                        //     let tri_info_base_mut = tri_info.get(&triangle_base).unwrap();
+                        //     if let tri_info_base_mut.level
+                        // }
                         break;
                     } else if n + m == 1 {
                         if tri_info.get(&triangle_current.unwrap().target()).is_none() {
                             tri_info.insert(
                                 triangle_current.unwrap().target(),
                                 TriInfo {
-                                    level: Level::L2,
+                                    level: LevelInfo::L2(None,None),
                                     component: Some(*component),
                                 },
                             );
@@ -1202,10 +1215,13 @@ impl ConstrainedTriangulation {
                             let triangle_temp = edge.triangle_across();
                             if triangle_temp == triangle_last {
                                 // edge_last = edge;
+                                // TODO: we need to set the
+                                // adjaceny of current here, see line 33 in the
+                                // paper
                             } else if !edge.edge().point.constraint
                                 && tri_info
                                     .get(&triangle_temp.target())
-                                    .map(|x| x.level != Level::L1)
+                                    .map(|x| x.level.as_level() != Level::L1)
                                     .unwrap_or(true)
                             {
                                 triangle_next = Some(triangle_temp);
@@ -1213,7 +1229,7 @@ impl ConstrainedTriangulation {
                             } else if !edge.edge().point.constraint
                                 && tri_info
                                     .get(&triangle_temp.target())
-                                    .map(|x| x.level == Level::L1)
+                                    .map(|x| x.level.as_level() == Level::L1)
                                     .unwrap_or(false)
                             {
                                 self.collapse_rooted_tree(
@@ -1283,10 +1299,10 @@ impl LinkageMap {
         let mut n_l3 = 0;
         for (_, v) in self.0.iter() {
             match v.level {
-                Level::L0 => n_l0 += 1,
-                Level::L1 => n_l1 += 1,
-                Level::L2 => n_l2 += 1,
-                Level::L3 => n_l3 += 1,
+                LevelInfo::L0 => n_l0 += 1,
+                LevelInfo::L1(..) => n_l1 += 1,
+                LevelInfo::L2(..) => n_l2 += 1,
+                LevelInfo::L3(..) => n_l3 += 1,
             }
         }
         (n_l0, n_l1, n_l2, n_l3)
@@ -1331,7 +1347,7 @@ impl<'a> EdgeRefA<'a, Segment, ()> {
                 // Then we need to get the canonical edge.
                 let canonical_edge = adjacent_edge.get_tri_canonical();
                 // Then we need to see if we know the level of the triangle.
-                let this_level = tri_info.get(&canonical_edge.target()).map(|x| x.level);
+                let this_level: Option<Level> = tri_info.get(&canonical_edge.target()).map(|x| x.level.into());
                 if this_level == Some(level) {
                     n_tris += 1;
                 }
@@ -1347,7 +1363,7 @@ impl<'a> EdgeRefA<'a, Segment, ()> {
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct TriInfo {
-    pub level: Level,
+    pub level: LevelInfo,
     pub component: Option<NonZeroUsize>,
 }
 
@@ -1366,6 +1382,64 @@ impl From<Level> for usize {
             Level::L1 => 1,
             Level::L2 => 2,
             Level::L3 => 3,
+        }
+    }
+}
+
+impl From<LevelInfo> for Level {
+    fn from(level: LevelInfo) -> Self {
+        match level {
+            LevelInfo::L0 => Level::L0,
+            LevelInfo::L1(..) => Level::L1,
+            LevelInfo::L2(..) => Level::L2,
+            LevelInfo::L3(..) => Level::L3,
+        }
+    }
+}
+
+impl From<&LevelInfo> for Level {
+    fn from(level: &LevelInfo) -> Self {
+        match level {
+            LevelInfo::L0 => Level::L0,
+            LevelInfo::L1(..) => Level::L1,
+            LevelInfo::L2(..) => Level::L2,
+            LevelInfo::L3(..) => Level::L3,
+        }
+    }
+}
+
+/// Each level also has adjacency information which varies depending on the
+/// level.
+///    * *L0 Nodes:* Has no adjacency information.
+///    * *L1 Nodes:* Contains the L2 node at the root of the tree if it has one,
+///      or nothing if it's unrooted.
+///    * *L2 Nodes:* Contains 2 nodes which are the L3 nodes at either end of
+///      the corridor. It is possible that it is the same node. Contains nothing
+///      if it is an L2 ring (i.e. the component does not contain any L3 nodes,
+///      although it may contain L1 nodes).
+///    * *L3 Nodes:* Contain the 3 other L3 nodes it is connected to at the
+///      other end of the corridors.
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub enum LevelInfo {
+    L0,
+    L1(Option<EdgeTarget>),
+    L2(Option<EdgeTarget>, Option<EdgeTarget>),
+    L3(Option<EdgeTarget>, Option<EdgeTarget>, Option<EdgeTarget>),
+}
+
+impl LevelInfo {
+    pub fn as_level(&self) -> Level {
+        self.into()
+    }
+}
+
+impl From<LevelInfo> for usize {
+    fn from(level: LevelInfo) -> Self {
+        match level {
+            LevelInfo::L0 => 0,
+            LevelInfo::L1(..) => 1,
+            LevelInfo::L2(..) => 2,
+            LevelInfo::L3(..) => 3,
         }
     }
 }
