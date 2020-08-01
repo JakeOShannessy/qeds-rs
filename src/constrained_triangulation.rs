@@ -38,6 +38,23 @@ impl HasPoint for Segment {
 }
 
 #[derive(Clone, Debug)]
+/// Contains trianglulation as well as higher level data.
+pub struct FullMap {
+    /// The quad-edge data structure we use as the basis for the triangulation.
+    pub triangulation: ConstrainedTriangulation,
+    pub classification: LinkageMap,
+}
+
+impl FullMap {
+    pub fn new() -> Self {
+        Self {
+            triangulation: ConstrainedTriangulation::new(),
+            classification: LinkageMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
 pub struct ConstrainedTriangulation {
     /// The quad-edge data structure we use as the basis for the triangulation.
@@ -876,7 +893,7 @@ impl ConstrainedTriangulation {
                 component = NonZeroUsize::new(component.get() + 1).unwrap();
             }
         }
-        LinkageMap::new(tri_info)
+        LinkageMap::from(tri_info)
     }
 
     // It must be the case that r is L2 and t and all its children are L1
@@ -1214,12 +1231,44 @@ impl ConstrainedTriangulation {
             }
         }
     }
+
+    /// Return a list of triangles (denoted by canonical [`EdgeTarget`]s)
+    /// between two points, including the start and end triangles. Returns
+    /// [`None`] if there is no path.
+    pub fn find_node_path_points(&self, tri_info: &LinkageMap, pa: Point, pb: Point) -> Option<Vec<EdgeTarget>> {
+        // First we need to find the two nodes we are pathfinding between.
+        let node_a = self.locate(pa)?.get_tri_canonical();
+        let node_b = self.locate(pb)?.get_tri_canonical();
+        self.find_node_path_nodes(tri_info, node_a, node_b)
+    }
+
+    pub fn find_node_path_nodes(&self, tri_info: &LinkageMap, node_a: EdgeRefA<Segment, ()>, node_b: EdgeRefA<Segment, ()>) -> Option<Vec<EdgeTarget>> {
+        // If the two nodes are the same, we return a single path of that node.
+        if node_a == node_b {
+            return Some(vec![node_a.target()]);
+        }
+        // If the two nodes lie in different components, there is no path
+        // between them.
+        let tri_info_a = tri_info.get(&node_a.target())?;
+        let tri_info_b = tri_info.get(&node_b.target())?;
+        // If the two nodes are in different components there is no path between
+        // the two nodes.
+        if tri_info_a.component? != tri_info_b.component? {
+            return None;
+        }
+        todo!()
+    }
+
 }
 
+#[derive(Clone, Debug)]
 pub struct LinkageMap(HashMap<EdgeTarget, TriInfo>);
 
 impl LinkageMap {
-    pub fn new(map: HashMap<EdgeTarget, TriInfo>) -> Self {
+    pub fn new() -> Self {
+        LinkageMap(HashMap::new())
+    }
+    pub fn from(map: HashMap<EdgeTarget, TriInfo>) -> Self {
         LinkageMap(map)
     }
 
