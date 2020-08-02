@@ -989,6 +989,16 @@ impl ConstrainedTriangulation {
                     }
                 // a.push
                 } else {
+                    {
+                        let tri_info_mut = tri_info.get_mut(&triangle_current.target()).unwrap();
+                        // Get a mutable reference to Level 1 adjacency info
+                        if let LevelInfo::L1(ref mut s) = tri_info_mut.level {
+                            // Set it to None
+                            *s = None;
+                        } else {
+                            panic!("incorrect level, should only be considering L1 triangles")
+                        }
+                    }
                     if let Some(_this_tri_info) = tri_info.get(&triangle_last.target()) {
                     } else {
                     }
@@ -1074,7 +1084,8 @@ impl ConstrainedTriangulation {
                 // handled by another triangle to which it is connected.
 
                 // Find the unconstrained edge and add the triangle that is
-                // across this edge to first queue.
+                // across this edge to first queue. It is possible that a single
+                // triangle is added twice to this queue.
                 for edge in triangle.l_face().edges {
                     let triangle_across_target = edge.triangle_across().target();
                     let triangle_across = unsafe { self.qeds.edge_a_ref(triangle_across_target) };
@@ -1101,12 +1112,15 @@ impl ConstrainedTriangulation {
         while let Some(triangle) = q.pop_front() {
             // If we don't know the level of this triangle, we must determine
             // it.
+
+            // How any of the adjacent triangles (i.e. across an
+            // unconstrained edge) are known to be level 1?
             let n_l1s = triangle.num_adjacent_level(tri_info, Level::L1);
+            // It is possible that a triangle appears multiple times in the
+            // queue, so we only process it if it's tri_info is None.
             if tri_info.get(&triangle.target()).is_none() {
                 // How many of the edges of this triangle are constrained?
                 let n_constraints = triangle.n_constrained_edges();
-                // How any of the adjacent triangles (i.e. across an
-                // unconstrained edge) are known to be level 1?
                 if (n_constraints + n_l1s) >= 2 {
                     // Set the level of the triangle to 1
                     tri_info.insert(
@@ -1118,7 +1132,7 @@ impl ConstrainedTriangulation {
                     );
                     // For each of the edges, get the triangle across and if the
                     // edge is unconstrained and the level of the triangle is
-                    // not set.
+                    // not set then add it to the queue.
                     for edge in triangle.l_face().edges {
                         let next_triangle = edge.sym().get_tri_canonical();
                         let next_triangle_info = tri_info.get(&next_triangle.target());
@@ -1165,7 +1179,7 @@ impl ConstrainedTriangulation {
                 .into_iter()
                 .map(|x| x.target())
                 .collect();
-            for edge in x_tri_edges {
+            for (i, edge) in x_tri_edges.into_iter().enumerate() {
                 let edge = unsafe { self.qeds.edge_a_ref(edge) };
                 if edge.edge().point.constraint {
                     continue;
@@ -1179,18 +1193,33 @@ impl ConstrainedTriangulation {
                         .unwrap()
                         .num_adjacent_level(tri_info, Level::L1);
                     if n + m == 0 {
-                        // How is it possible that we don't know the current level or anything?
                         if tri_info.get(&triangle_current.unwrap().target()).is_none() {
                             q.push_back(triangle_current.unwrap());
                         }
-                        // TODO: we need to set the adjaceny, but we don't know
-                        // enough yet.
-                        // {
-                        //     let tri_info_base_mut = tri_info.get(&triangle_base).unwrap();
-                        //     if let tri_info_base_mut.level
-                        // }
+                        // We know that one of the L3 that the base L3 is
+                        // connected to is the current L3.
+                        {
+                            let tri_info_mut = tri_info.get_mut(&triangle_base.target()).unwrap();
+                            if let LevelInfo::L3(ref mut s1,ref mut s2,ref mut s3) = tri_info_mut.level {
+                                if i == 0 {
+                                    *s1 = Some(triangle_current.unwrap().target());
+                                } else if i == 1 {
+                                    *s2 = Some(triangle_current.unwrap().target());
+                                } else if i == 2 {
+                                    *s3 = Some(triangle_current.unwrap().target());
+                                } else {
+                                    panic!("invalid edge index");
+                                }
+                            } else {
+                                panic!("incorrect level, should only be considering L3 triangles")
+                            }
+                        }
                         break;
                     } else if n + m == 1 {
+                        // Sometimes we have already labelled the triangle as
+                        // L2, but we still need to add some adjacency
+                        // information. If, however, we haven't set any
+                        // information, set the level to L2 now.
                         if tri_info.get(&triangle_current.unwrap().target()).is_none() {
                             tri_info.insert(
                                 triangle_current.unwrap().target(),
@@ -1210,14 +1239,28 @@ impl ConstrainedTriangulation {
                             .into_iter()
                             .map(|x| x.target())
                             .collect();
-                        for edge in tri_edges.into_iter() {
+                        for (i, edge) in tri_edges.into_iter().enumerate() {
                             let edge = unsafe { self.qeds.edge_a_ref(edge) };
                             let triangle_temp = edge.triangle_across();
                             if triangle_temp == triangle_last {
                                 // edge_last = edge;
-                                // TODO: we need to set the
-                                // adjaceny of current here, see line 33 in the
-                                // paper
+
+                                // Set the adjaceny information. We know the
+                                // start L3 which we can attach.
+                                {
+                                    let tri_info_mut = tri_info.get_mut(&triangle_current.unwrap().target()).unwrap();
+                                    if let LevelInfo::L2(ref mut s1,ref mut s2) = tri_info_mut.level {
+                                        if i == 0 || i == 1 {
+                                            *s1 = Some(triangle_base.target());
+                                        } else if i == 2 {
+                                            *s2 = Some(triangle_base.target());
+                                        } else {
+                                            panic!("invalid edge index");
+                                        }
+                                    } else {
+                                        panic!("incorrect level, should only be considering L2 triangles")
+                                    }
+                                }
                             } else if !edge.edge().point.constraint
                                 && tri_info
                                     .get(&triangle_temp.target())
@@ -1512,7 +1555,7 @@ impl<'a, BData> EdgeRefA<'a, Segment, BData> {
         true
     }
 
-    fn get_tri_canonical(&self) -> Self {
+    pub fn get_tri_canonical(&self) -> Self {
         let second_edge = self.l_next();
         let third_edge = second_edge.l_next();
         let mut canonical_edge = *self;
