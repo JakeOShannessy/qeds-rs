@@ -5,6 +5,6 @@ authors = ["Jake O'Shannessy <joshannessy@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-slab = "0.4.2"
-nalgebra = "0.21.1"
-rand = "0.7.3"
+slab = "0.4"
+nalgebra = "0.21"
+rand = "0.7"

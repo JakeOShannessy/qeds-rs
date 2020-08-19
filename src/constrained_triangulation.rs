@@ -118,7 +118,7 @@ impl ConstrainedTriangulation {
         let mut e = self.some_edge_a().unwrap();
         let mut rng = rand::thread_rng();
         let mut current_iterations = 0;
-        loop {
+        let edge = loop {
             current_iterations += 1;
             if current_iterations > 2000 {
                 panic!("locating failed for: {}", point);
@@ -127,11 +127,11 @@ impl ConstrainedTriangulation {
             // it is tested second.
             let onext_first: bool = rng.gen();
             if point == e.edge().point.point {
-                return Some(e);
+                break Some(e);
             } else if point == e.sym().edge().point.point {
                 // If we lie on the eDest, return eSym(). This is a departure
                 // from the paper which just returns e.
-                return Some(e.sym());
+                break Some(e.sym());
             } else if e.lies_right_strict(point) {
                 e = e.sym();
             } else {
@@ -141,7 +141,7 @@ impl ConstrainedTriangulation {
                     } else if !e.d_prev().lies_right_strict(point) {
                         e = e.d_prev();
                     } else {
-                        return Some(e);
+                        break Some(e);
                     }
                 } else {
                     if !e.d_prev().lies_right_strict(point) {
@@ -149,11 +149,17 @@ impl ConstrainedTriangulation {
                     } else if !e.onext().lies_right_strict(point) {
                         e = e.onext();
                     } else {
-                        return Some(e);
+                        break Some(e);
                     }
                 }
             }
-        }
+        };
+        edge
+    }
+
+    /// Return the canonical tri within which this point is located.
+    pub fn locate_tri(&self, point: Point) -> Option<EdgeRefA<Segment, ()>> {
+        self.locate(point).map(|edge|edge.get_tri_canonical())
     }
 
     /// The edge this returns should always have the added point at its origin.
@@ -203,6 +209,7 @@ impl ConstrainedTriangulation {
     ) -> (Vec<EdgeTarget>, EdgeTarget) {
         use Direction::*;
         // TODO: this belongs in the base trianglulation.
+
         // [`start`] is an edge of the triangle in which the fist point ([`a`])
         // is located.
         let mut start = self.locate(a).unwrap();
@@ -240,6 +247,7 @@ impl ConstrainedTriangulation {
                             );
                             match next_dir {
                                 Straight => {
+                                    println!("line passes straight along an edge");
                                     return self.find_intersections_between_points(
                                         next_edge.sym().edge().point.point(),
                                         b,
@@ -386,7 +394,7 @@ impl ConstrainedTriangulation {
 
         self.update_bounds(pa);
         self.update_bounds(pb);
-
+        println!("Points {} and {} have been added", pa,pb);
         // Step 1. Wherever the new segment crosses an existing constrained
         // segment add a new point. Also update the edges accordingly. As part
         // of this process, the constraint will be split into a series of
@@ -897,7 +905,7 @@ impl ConstrainedTriangulation {
     }
 
     // It must be the case that r is L2 and t and all its children are L1
-    fn collapse_rooted_tree(
+    fn old_collapse_rooted_tree(
         &self,
         tri_info: &mut HashMap<EdgeTarget, TriInfo>,
         r: EdgeRefA<Segment, ()>,
@@ -945,10 +953,6 @@ impl ConstrainedTriangulation {
                     .is_none()
                     && !edge.edge().point.constraint
                 {
-                    // we get an error here because we try and set component
-                    // value of a node that has no level set. We shouldn't ever
-                    // be setting the component for a node without a level.
-                    tri_info.get_mut(&triangle_last.target()).unwrap().component = Some(component);
                     if triangle_last == r {
                         // TODO
                     } else {
@@ -989,16 +993,16 @@ impl ConstrainedTriangulation {
                     }
                 // a.push
                 } else {
-                    {
-                        let tri_info_mut = tri_info.get_mut(&triangle_current.target()).unwrap();
-                        // Get a mutable reference to Level 1 adjacency info
-                        if let LevelInfo::L1(ref mut s) = tri_info_mut.level {
-                            // Set it to None
-                            *s = None;
-                        } else {
-                            panic!("incorrect level, should only be considering L1 triangles")
-                        }
-                    }
+                    // {
+                    //     let tri_info_mut = tri_info.get_mut(&triangle_current.target()).unwrap();
+                    //     // Get a mutable reference to Level 1 adjacency info
+                    //     if let LevelInfo::L1(ref mut s) = tri_info_mut.level {
+                    //         // Set it to None
+                    //         *s = None;
+                    //     } else {
+                    //         panic!("incorrect level, should only be considering L1 triangles")
+                    //     }
+                    // }
                     if let Some(_this_tri_info) = tri_info.get(&triangle_last.target()) {
                     } else {
                     }
@@ -1007,6 +1011,60 @@ impl ConstrainedTriangulation {
                     } else {
                         // TODO
                     }
+                }
+            }
+        }
+    }
+
+    // It must be the case that r is L2 and t and all its children are L1
+    fn collapse_rooted_tree(
+        &self,
+        tri_info: &mut HashMap<EdgeTarget, TriInfo>,
+        r: EdgeRefA<Segment, ()>,
+        t: EdgeRefA<Segment, ()>,
+    ) {
+        assert!(tri_info
+            .get(&r.target())
+            .map(|info| info.level.as_level() == Level::L2)
+            .unwrap_or(false));
+        assert!(tri_info
+            .get(&t.target())
+            .map(|info| info.level.as_level() == Level::L1)
+            .unwrap_or(false));
+        let component = tri_info.get(&r.target()).unwrap().component.unwrap();
+        let mut s = Vec::new();
+        s.push(t);
+        let mut a = Vec::new();
+        a.push(0);
+        while let Some(triangle_current) = s.pop() {
+            {
+                let tri_info_mut = tri_info.get_mut(&triangle_current.target()).unwrap();
+                // Set the component of the current triangle
+                tri_info_mut.component = Some(component);
+                // Get a mutable reference to Level 1 adjacency info
+                if let LevelInfo::L1(ref mut s) = tri_info_mut.level {
+                    *s = Some(r.target());
+                } else {
+                    panic!("incorrect level, should only be considering L1 triangles")
+                }
+            }
+            for edge in triangle_current
+                .l_face()
+                .edges
+                .into_iter()
+                .map(|x| x.target())
+            {
+                let edge = unsafe { self.qeds.edge_a_ref(edge) };
+                let triangle_last = edge.triangle_across();
+                if edge.edge().point.constraint {
+                    continue;
+                }
+                if tri_info
+                    .get(&triangle_last.target())
+                    .and_then(|x| x.component)
+                    .is_none()
+                {
+                    s.push(triangle_last)
                 }
             }
         }
@@ -1164,6 +1222,7 @@ impl ConstrainedTriangulation {
         let mut q: VecDeque<EdgeRefA<Segment, ()>> = VecDeque::new();
         q.push_back(triangle);
         while let Some(triangle_base) = q.pop_front() {
+            // triangle_base is an L3 triangle
             tri_info.insert(
                 triangle_base.target(),
                 TriInfo {
@@ -1179,11 +1238,18 @@ impl ConstrainedTriangulation {
                 .into_iter()
                 .map(|x| x.target())
                 .collect();
+            // edge is one of the edges of the L3 triangle, and i is the index
+            // of the edge in the range [0,2], with 0 being the canonical edge.
             for (i, edge) in x_tri_edges.into_iter().enumerate() {
                 let edge = unsafe { self.qeds.edge_a_ref(edge) };
                 if edge.edge().point.constraint {
-                    continue;
+                    panic!("A level 3 tri should never have a constraint as an edge");
+                    // continue;
                 }
+                // For each edge, we walk along the L2 nodes emanating from that
+                // edge. [`triangle_current`] is the L2 node we are currently
+                // looking at. [`triangle_last`] is the previous L2 node or the
+                // L3 node in the case of the first iteration.
                 let mut triangle_current = Some(edge.triangle_across());
                 let mut triangle_last = triangle_base.clone();
                 loop {
@@ -1193,11 +1259,15 @@ impl ConstrainedTriangulation {
                         .unwrap()
                         .num_adjacent_level(tri_info, Level::L1);
                     if n + m == 0 {
+                        // We have reached the next L3 node. We push this L3
+                        // node onto the stack ([`q`]) for future processing.
                         if tri_info.get(&triangle_current.unwrap().target()).is_none() {
                             q.push_back(triangle_current.unwrap());
                         }
-                        // We know that one of the L3 that the base L3 is
-                        // connected to is the current L3.
+                        // This current L3 node [`triangle_current`] must be
+                        // connected to our starting L3 node [`triangle_base`].
+                        // We therefore mark [`triangle_current`] as one of the
+                        // adjacent L3 nodes for [`triangle_base`].
                         {
                             let tri_info_mut = tri_info.get_mut(&triangle_base.target()).unwrap();
                             if let LevelInfo::L3(ref mut s1,ref mut s2,ref mut s3) = tri_info_mut.level {
@@ -1216,6 +1286,8 @@ impl ConstrainedTriangulation {
                         }
                         break;
                     } else if n + m == 1 {
+                        // [`triangle_current`] is an L2 node.
+
                         // Sometimes we have already labelled the triangle as
                         // L2, but we still need to add some adjacency
                         // information. If, however, we haven't set any
@@ -1229,8 +1301,16 @@ impl ConstrainedTriangulation {
                                 },
                             );
                         }
-                        // let mut edge_next;
-                        // let mut edge_last;
+                        // One of the adjacency information slots needs to be
+                        // filled with [`triangle_base`] as an adjacent L3 node.
+                        // First we need to determine 2 things:
+                        //    * Which is the edge index [0,2] of the constrained
+                        //      or L1-connected edge.
+                        //    * Which is the edge index [0,2] of the edge we
+                        //      just stepped across to get to this node.
+                        let mut constrained_edge_i: Option<usize> = None;
+                        let mut entered_edge_i: Option<usize> = None;
+                        let mut next_edge_i: Option<usize> = None;
                         let tri_current = triangle_current.unwrap();
                         let tri_edges: Vec<EdgeTarget> = tri_current
                             .l_face()
@@ -1239,34 +1319,27 @@ impl ConstrainedTriangulation {
                             .into_iter()
                             .map(|x| x.target())
                             .collect();
+                        // This L2 node has three edges (as always). One of them
+                        // will be a constraint or L1 node, the other 2 will be
+                        // connected to either L2 or L3 nodes.
                         for (i, edge) in tri_edges.into_iter().enumerate() {
                             let edge = unsafe { self.qeds.edge_a_ref(edge) };
                             let triangle_temp = edge.triangle_across();
                             if triangle_temp == triangle_last {
-                                // edge_last = edge;
-
-                                // Set the adjaceny information. We know the
-                                // start L3 which we can attach.
-                                {
-                                    let tri_info_mut = tri_info.get_mut(&triangle_current.unwrap().target()).unwrap();
-                                    if let LevelInfo::L2(ref mut s1,ref mut s2) = tri_info_mut.level {
-                                        if i == 0 || i == 1 {
-                                            *s1 = Some(triangle_base.target());
-                                        } else if i == 2 {
-                                            *s2 = Some(triangle_base.target());
-                                        } else {
-                                            panic!("invalid edge index");
-                                        }
-                                    } else {
-                                        panic!("incorrect level, should only be considering L2 triangles")
-                                    }
-                                }
+                                // If the triangle across from this edge is
+                                // [`triangle_last`] (i.e. the triangle we came
+                                // from), then this is the edge we used to enter
+                                // the node.
+                                entered_edge_i = Some(i);
                             } else if !edge.edge().point.constraint
                                 && tri_info
                                     .get(&triangle_temp.target())
                                     .map(|x| x.level.as_level() != Level::L1)
                                     .unwrap_or(true)
                             {
+                                // The triangle across from this edge is the
+                                // next L2 or L3 node.
+                                next_edge_i = Some(i);
                                 triangle_next = Some(triangle_temp);
                             // edge_next = edge;
                             } else if !edge.edge().point.constraint
@@ -1275,14 +1348,40 @@ impl ConstrainedTriangulation {
                                     .map(|x| x.level.as_level() == Level::L1)
                                     .unwrap_or(false)
                             {
+                                // The triangle across from this edge is an L1
+                                // tree.
+                                constrained_edge_i = Some(i);
                                 self.collapse_rooted_tree(
                                     tri_info,
                                     triangle_current.unwrap(),
                                     triangle_temp,
                                 );
+                            } else if edge.edge().point.constraint {
+                                // This edge is a constraint
+                                constrained_edge_i = Some(i);
+                            } else {
+                                unreachable!()
+                            }
+                        }
+                        let constrained_edge_i: usize = constrained_edge_i.unwrap();
+                        let entered_edge_i: usize = entered_edge_i.unwrap();
+                        let next_edge_i: usize = next_edge_i.unwrap();
+                        // Set the adjaceny information. We know the
+                        // start L3 which we can attach.
+                        {
+                            let tri_info_mut = tri_info.get_mut(&triangle_current.unwrap().target()).unwrap();
+                            if let LevelInfo::L2(ref mut s1,ref mut s2) = tri_info_mut.level {
+                                if entered_edge_i < next_edge_i {
+                                    *s1 = Some(triangle_base.target());
+                                } else {
+                                    *s2 = Some(triangle_base.target());
+                                }
+                            } else {
+                                panic!("incorrect level, should only be considering L2 triangles")
                             }
                         }
                     }
+
                     // TODO: this line is not in the paper, but it makes sense.
                     triangle_last = triangle_current.unwrap();
                     triangle_current = triangle_next;
@@ -1296,8 +1395,8 @@ impl ConstrainedTriangulation {
     /// [`None`] if there is no path.
     pub fn find_node_path_points(&self, tri_info: &LinkageMap, pa: Point, pb: Point) -> Option<Vec<EdgeTarget>> {
         // First we need to find the two nodes we are pathfinding between.
-        let node_a = self.locate(pa)?.get_tri_canonical();
-        let node_b = self.locate(pb)?.get_tri_canonical();
+        let node_a = self.locate_tri(pa)?;
+        let node_b = self.locate_tri(pb)?;
         self.find_node_path_nodes(tri_info, node_a, node_b)
     }
 
@@ -1321,7 +1420,8 @@ impl ConstrainedTriangulation {
 }
 
 #[derive(Clone, Debug)]
-pub struct LinkageMap(HashMap<EdgeTarget, TriInfo>);
+pub struct LinkageMap(pub HashMap<EdgeTarget, TriInfo>);
+
 
 impl LinkageMap {
     pub fn new() -> Self {
@@ -1353,7 +1453,7 @@ impl LinkageMap {
 }
 
 impl<'a> EdgeRefA<'a, Segment, ()> {
-    fn triangle_across(&self) -> Self {
+    pub fn triangle_across(&self) -> Self {
         let edge_on_next_tri = self.sym();
         let canonical_edge = edge_on_next_tri.get_tri_canonical();
         canonical_edge
@@ -1473,6 +1573,13 @@ pub enum LevelInfo {
 impl LevelInfo {
     pub fn as_level(&self) -> Level {
         self.into()
+    }
+    pub fn is_ring_or_loop(&self) -> bool {
+        if let LevelInfo::L2(a,b) = self {
+            a == b
+        } else {
+            false
+        }
     }
 }
 
@@ -1937,12 +2044,15 @@ mod tests {
     #[test]
     fn l_shaped_triangulation() {
         let mut triangulation = ConstrainedTriangulation::new();
+        // triangulation.add_point(Point::new(-5.5, 5.5));
+        // triangulation.add_point(Point::new(-4.5, 5.5));
+
         triangulation.add_constraint(Point::new(-5.5, 5.5), Point::new(-4.5, 5.5));
         triangulation.add_constraint(Point::new(-4.5, 5.5), Point::new(-4.5, 4.5));
 
-        // 26 triangles, 18 from the quad and 8 from the bounding box.
-        // assert_eq!(triangulation.triangles().count(), 26);
-        let _tri_info = triangulation.classify_triangles();
+        // 8 triangles, 1 from the l-shape and 7 from the bounding box.
+        assert_eq!(triangulation.triangles().count(), 8);
+        // let _tri_info = triangulation.classify_triangles();
         // assert_eq!(tri_info.ns(),(1,0,13,0));
     }
 
