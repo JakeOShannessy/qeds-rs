@@ -164,9 +164,7 @@ impl ConstrainedTriangulation {
 
     /// The edge this returns should always have the added point at its origin.
     pub fn add_point(&mut self, mut point: Point) -> Option<EdgeTarget> {
-        // print!("Attempting to insert point at {} ", point);
         point.snap();
-        // println!("but snapped to {}", point);
         self.update_bounds(point);
         if let Some(edge_ref) = self.locate(point) {
             let edge_target = edge_ref.target();
@@ -213,14 +211,8 @@ impl ConstrainedTriangulation {
         // [`start`] is an edge of the triangle in which the fist point ([`a`])
         // is located.
         let mut start = self.locate(a).unwrap();
-        // println!(
-        //     "Start is: {}-{}",
-        //     start.edge().point.point(),
-        //     start.sym().edge().point.point()
-        // );
         // End condition.
         if start.edge().point.point() == b {
-            // println!("reached end condition");
             return (vec![], start.target());
         }
         let mut intersecting_edge = if a == start.edge().point.point() {
@@ -247,14 +239,12 @@ impl ConstrainedTriangulation {
                             );
                             match next_dir {
                                 Straight => {
-                                    println!("line passes straight along an edge");
                                     return self.find_intersections_between_points(
                                         next_edge.sym().edge().point.point(),
                                         b,
                                     )
                                 }
                                 Left => {
-                                    // println!("was left");
                                     start = next_edge;
                                 }
                                 Right => break,
@@ -263,7 +253,6 @@ impl ConstrainedTriangulation {
                         break;
                     }
                     _ => {
-                        // println!("It is straight or to the right");
                         start = start.onext();
                         if start == initial_start {
                             panic!("looped around ring");
@@ -394,12 +383,10 @@ impl ConstrainedTriangulation {
 
         self.update_bounds(pa);
         self.update_bounds(pb);
-        println!("Points {} and {} have been added", pa,pb);
         // Step 1. Wherever the new segment crosses an existing constrained
         // segment add a new point. Also update the edges accordingly. As part
         // of this process, the constraint will be split into a series of
         // smaller constraints.
-        // println!("Inserting constraint from {} to {}", pa, pb);
         let mut i = 0;
         // The purpose of this loop is to keep breaking small chunks off the
         // constraint until we are done. Each iteration of this loop is the
@@ -568,7 +555,6 @@ impl ConstrainedTriangulation {
     /// This function accounts for the point lying on an existing edge or point.
     fn add_to_l_face(&mut self, edge_target: EdgeTarget, point: Point) -> EdgeTarget {
         unsafe {
-            // println!("Point addition requested at: {}", point);
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
             if point_a == point {
@@ -1363,7 +1349,7 @@ impl ConstrainedTriangulation {
                                 unreachable!()
                             }
                         }
-                        let constrained_edge_i: usize = constrained_edge_i.unwrap();
+                        let _constrained_edge_i: usize = constrained_edge_i.unwrap();
                         let entered_edge_i: usize = entered_edge_i.unwrap();
                         let next_edge_i: usize = next_edge_i.unwrap();
                         // Set the adjaceny information. We know the
