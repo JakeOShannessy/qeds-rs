@@ -1021,15 +1021,15 @@ impl<AData: HasPoint + Clone, BData: Clone> Face<'_, AData, BData> {
     pub fn vertices(&self) -> FaceVerticesIter<AData, BData> {
         FaceVerticesIter::new(self)
     }
-    pub fn vertices_pairs(
-        &self,
-    ) -> std::iter::Zip<
-        FaceVerticesIter<'_, AData, BData>,
-        std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'_, AData, BData>>>,
-    > {
+    pub fn vertices_pairs(&self) -> VertexPairIter<'_, AData, BData> {
         self.vertices().zip(self.vertices().cycle().skip(1))
     }
 }
+
+pub type VertexPairIter<'a, AData, BData> = std::iter::Zip<
+    FaceVerticesIter<'a, AData, BData>,
+    std::iter::Skip<std::iter::Cycle<FaceVerticesIter<'a, AData, BData>>>,
+>;
 
 #[derive(Clone, Debug)]
 pub struct FaceB<'a, AData, BData> {

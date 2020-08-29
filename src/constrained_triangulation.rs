@@ -212,6 +212,7 @@ impl L3Path {
             current_node: self.start_node,
             pending_nodes: Vec::new(),
             path: self.path.as_slice(),
+            ended: false,
         }
     }
 }
@@ -221,6 +222,7 @@ pub struct L3PathNodeIter<'a> {
     current_node: L3NodeTarget,
     pending_nodes: Vec<NodeTarget>,
     path: &'a [(u8, L3NodeTarget)],
+    ended: bool,
 }
 
 impl<'a> Iterator for L3PathNodeIter<'a> {
@@ -246,7 +248,12 @@ impl<'a> Iterator for L3PathNodeIter<'a> {
             } else {
                 // If there are no more elements on the path we have finished
                 // iterating.
-                None
+                if self.ended {
+                    None
+                } else {
+                    self.ended = true;
+                    Some(self.current_node.into())
+                }
             }
         }
     }
@@ -2810,6 +2817,50 @@ mod tests {
             .filter(|(_i, q)| q.edges_a[0].point.constraint)
             .count();
         assert_eq!(n_constraints, 9);
+    }
+
+    #[test]
+    fn path_iter() {
+        let mut full_map = FullMap::new();
+        {
+            let triangulation = &mut full_map.triangulation;
+            let p1 = Point::new(0.0, 0.0);
+            let p2 = Point::new(5.0, 0.0);
+            let p3 = Point::new(5.0, 3.0);
+            let p4 = Point::new(0.0, 3.0);
+
+            let q1 = Point::new(1.0, 1.0);
+            let q2 = Point::new(2.0, 1.0);
+            let q3 = Point::new(2.0, 2.0);
+            let q4 = Point::new(1.0, 2.0);
+
+            let r = Point::new(2.0, 0.0);
+
+            let r1 = r + q1;
+            let r2 = r + q2;
+            let r3 = r + q3;
+            let r4 = r + q4;
+
+            triangulation.add_constraint(p1, p2);
+            triangulation.add_constraint(p2, p3);
+            triangulation.add_constraint(p3, p4);
+            triangulation.add_constraint(p4, p1);
+
+            triangulation.add_constraint(q1, q2);
+            triangulation.add_constraint(q2, q3);
+            triangulation.add_constraint(q3, q4);
+            triangulation.add_constraint(q4, q1);
+
+            triangulation.add_constraint(r1, r2);
+            triangulation.add_constraint(r2, r3);
+            triangulation.add_constraint(r3, r4);
+            triangulation.add_constraint(r4, r1);
+        }
+        full_map.triangulation.classify_triangles();
+        let e = L3NodeTarget::new_unchecked(EdgeTarget::new(0,0,0));
+        let path = L3Path::new(e);
+        let nodes: Vec<NodeTarget> = path.node_iter(&full_map).collect();
+        assert_eq!(nodes, vec![e.into()]);
     }
 }
 
