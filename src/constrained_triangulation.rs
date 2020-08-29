@@ -165,6 +165,8 @@ impl From<NodeTarget> for EdgeTarget {
     }
 }
 
+/// An [`L3Path`] is a path from one L3 node to another L3 node via other L3
+/// nodes. This path is inclusive of the start and end nodes.
 #[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct L3Path {
     start_node: L3NodeTarget,
@@ -180,7 +182,12 @@ impl L3Path {
         }
     }
 
-    /// Get the last node of the path. This always returns a value as a path
+    /// The start node.
+    pub fn first(&self) -> L3NodeTarget {
+        self.start_node
+    }
+
+    /// Get the end node of the path. This always returns a value as a path
     /// must have a start node at a minimum.
     pub fn last(&self) -> L3NodeTarget {
         if let Some((_, node)) = self.path.last() {
@@ -237,8 +244,8 @@ impl<'a> Iterator for L3PathNodeIter<'a> {
             // number we want to step across from the currrent node.
             if let Some((edge_number, next_node)) = self.path.first() {
                 let current_node: NodeTarget = self.current_node.into();
-                self.current_node = *next_node;
                 let corridor = self.current_node.corridor(self.full_map, *edge_number);
+                self.current_node = *next_node;
                 let mut nodes: Vec<NodeTarget> = corridor.collect();
                 // Reverse the nodes so we can use it as a stack.
                 nodes.reverse();
@@ -258,6 +265,8 @@ impl<'a> Iterator for L3PathNodeIter<'a> {
         }
     }
 }
+
+pub type NodePath = Vec<NodeTarget>;
 
 /// An iterator that walks along a corridor in one direction.
 pub struct CorridorIter<'a> {
