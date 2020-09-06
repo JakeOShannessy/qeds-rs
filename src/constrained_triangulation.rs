@@ -682,7 +682,7 @@ impl ConstrainedTriangulation {
         // segment add a new point. Also update the edges accordingly. As part
         // of this process, the constraint will be split into a series of
         // smaller constraints.
-        let mut i = 0;
+
         // The purpose of this loop is to keep breaking small chunks off the
         // constraint until we are done. Each iteration of this loop is the
         // application of one of these "constraint chunks".
