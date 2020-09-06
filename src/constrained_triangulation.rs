@@ -389,7 +389,6 @@ impl<'a> CorridorIter<'a> {
         // The left value of the tuple should correlate to the left link value
         // in TriInfo.
 
-        println!("corridor: {:?} {:?} {:?}", start_node, next_1, next_2);
 
         (
             CorridorIter {
@@ -659,7 +658,6 @@ impl ConstrainedTriangulation {
     }
 
     pub fn add_constraint(&mut self, mut pa: Point, mut pb: Point) -> Option<()> {
-        println!("Adding constraint: {} - {}", pa, pb);
         unsafe {
             pb = {
                 let pb_edge = self.add_point(pb)?;
@@ -690,22 +688,6 @@ impl ConstrainedTriangulation {
         // application of one of these "constraint chunks".
 
         // TODO: don't consume this all at once, as indices may change.
-        {
-            let intersections: Vec<Intersection> =
-                self.find_intersections_between_points(pa, pb).collect();
-            println!("No. Intersections: {}", intersections.len());
-            print!("Intersections:");
-            for intersection in &intersections {
-                let s = match intersection {
-                    Intersection::Point(_) => "P",
-                    Intersection::Edge(_) => "E",
-                };
-                let target = intersection.target();
-                let point = target.edge(self).point.point();
-                print!(" {}{}", s, point);
-            }
-            println!("");
-        }
         let intersections: Vec<_> = self.find_intersections_between_points(pa, pb).collect();
         for intersection in intersections {
             // The first step is to ensure that we have both points. We produce
@@ -721,11 +703,6 @@ impl ConstrainedTriangulation {
                     let edge_data = edge_target.edge(self);
                     let edge_sym_data = edge_target.sym().edge(self);
                     let ex = unsafe { self.qeds.edge_a_ref(edge_target) };
-                    println!(
-                        "Intersection along {}-{}",
-                        ex.edge().point.point,
-                        ex.sym().edge().point.point
-                    );
                     let ex_sym = unsafe { self.qeds.edge_a_ref(edge_target) }.sym();
                     let e = ex.edge();
                     let e_sym = ex_sym.edge();
@@ -774,8 +751,6 @@ impl ConstrainedTriangulation {
                     }
                 }
             };
-            println!("Point: {:?}", inserted_point);
-            println!("Edge: {:?}", inserted_edge_target);
             if pa == inserted_point {
                 continue;
             }
@@ -795,7 +770,6 @@ impl ConstrainedTriangulation {
                         .point
                         .point()
                 );
-                println!("InsertedPoint: {}", inserted_point);
                 // This is the only place pa_edge is used.
                 let initial_edge = self.qeds.edge_a_ref(inserted_edge_target).target();
                 let mut edge = initial_edge;
@@ -803,10 +777,6 @@ impl ConstrainedTriangulation {
                     let first_point = self.qeds.edge_a_ref(edge).edge().point.point();
                     let other_point = self.qeds.edge_a_ref(edge).sym().edge().point.point();
                     debug_assert_eq!(inserted_point, first_point);
-                    println!(
-                        "pa: {}, first_point: {}, other_point: {}",
-                        pa, first_point, other_point
-                    );
                     if other_point == pa {
                         self.qeds.edge_a_mut(edge).point.constraint = true;
                         self.qeds.edge_a_mut(edge.sym()).point.constraint = true;
@@ -1277,16 +1247,15 @@ impl ConstrainedTriangulation {
         r: NodeTarget,
         t: NodeTarget,
     ) {
-        println!("collapsing rooted tree r: {:?}, t: {:?}", r, t);
-        assert!(tri_info
+        debug_assert!(tri_info
             .get(&r)
             .map(|info| info.level.as_level() == Level::L2)
             .unwrap_or(false));
-        assert!(tri_info
+        debug_assert!(tri_info
             .get(&t)
             .map(|info| info.level.as_level() == Level::L1)
             .unwrap_or(false));
-        assert!(r.adjacent_tris(self).contains(&t));
+        debug_assert!(r.adjacent_tris(self).contains(&t));
         let component = tri_info.get(&r).unwrap().component.unwrap();
         let mut s = Vec::new();
         s.push(t);
@@ -1330,7 +1299,6 @@ impl ConstrainedTriangulation {
         triangle: NodeTarget,
         component: &mut NonZeroUsize,
     ) {
-        println!("Building unrooted tree from: {:?}", triangle);
         let mut s: Vec<NodeTarget> = Vec::new();
         s.push(triangle);
         while let Some(triangle) = s.pop() {
@@ -1338,7 +1306,6 @@ impl ConstrainedTriangulation {
             let this_tri_info = if let Some(x) = tri_info.get_mut(&triangle) {
                 x
             } else {
-                println!("Could not get tri_info for {:?} (unrooted tree)", triangle);
                 return;
             };
             this_tri_info.component = Some(*component);
@@ -1397,7 +1364,6 @@ impl ConstrainedTriangulation {
                         component: None,
                     },
                 );
-                println!("{:?} is a seeding L1", triangle);
                 // We have considered this triangle and added it to the pile of
                 // completed tris. Note that at some point the tri will need to
                 // be revisited to add a component number, but that will be
@@ -1413,7 +1379,6 @@ impl ConstrainedTriangulation {
                     if !edge_data.point.constraint {
                         let triangle_across_info = tri_info.get(&triangle_across);
                         if triangle_across_info.is_none() {
-                            println!("adding {:?} as a potential L1", triangle_across);
                             q.push_back(triangle_across);
                             break;
                         } else if triangle_across_info
@@ -1446,11 +1411,6 @@ impl ConstrainedTriangulation {
             let n_l1s = triangle.num_adjacent_level(self, tri_info, Level::L1);
             // How many of the edges of this triangle are constrained?
             let n_constraints = triangle.n_constrained_edges(self);
-            if triangle.as_edge().e == 77 {
-                println!("Node is {:?}", triangle);
-                println!("n_l1s: {}", n_l1s);
-                println!("n_constraints: {}", n_constraints);
-            }
             // It is possible that a triangle appears multiple times in the
             // queue, so we only process it if it's tri_info or component number
             // is None. TODO: we need to consider L1 islands of only 2 elemnts,
@@ -1729,10 +1689,6 @@ impl<'a> Iterator for IntersectionIter<'a> {
     type Item = Intersection;
     fn next(&mut self) -> Option<Self::Item> {
         use Direction::*;
-        println!(
-            "Looking for intersections between {} and {}",
-            self.a, self.b
-        );
         // TODO: this belongs in the base trianglulation.
 
         if let Some(current_intersection) = self.current_intersection {
@@ -1743,10 +1699,6 @@ impl<'a> Iterator for IntersectionIter<'a> {
             // value but don't pop.
             match current_intersection {
                 Intersection::Point(intersecting_edge) => {
-                    println!(
-                        "Current Intersection (Point): {}",
-                        intersecting_edge.edge(self.triangulation).point.point()
-                    );
                     if intersecting_edge.edge(self.triangulation).point.point() == self.b {
                         return None;
                     }
@@ -1763,17 +1715,11 @@ impl<'a> Iterator for IntersectionIter<'a> {
                     // First we loop around until we are on a spoke where b is
                     // to the left.
                     loop {
-                        println!(
-                            "Looking at spoke: {}-{}",
-                            spoke.edge().point.point(),
-                            spoke.sym().edge().point.point(),
-                        );
                         let start_dir = left_or_right(
                             spoke.edge().point.point(),
                             spoke.sym().edge().point.point(),
                             self.b,
                         );
-                        println!("SpokeResult: {:?}", start_dir);
                         match start_dir {
                             Direction::Left => {
                                 // We have found a spoke where b is to the left.
@@ -1785,11 +1731,6 @@ impl<'a> Iterator for IntersectionIter<'a> {
                                         next_edge.edge().point.point(),
                                         next_edge.sym().edge().point.point(),
                                         self.b,
-                                    );
-                                    println!(
-                                        "Looking at next_edge: {}-{}",
-                                        next_edge.edge().point.point(),
-                                        next_edge.sym().edge().point.point(),
                                     );
                                     match next_dir {
                                         Straight => {
@@ -1810,7 +1751,6 @@ impl<'a> Iterator for IntersectionIter<'a> {
                             }
                             // TODO: this does not account for the 180 case
                             Direction::Straight => {
-                                println!("was straight");
                                 if self.b.distance(spoke.sym().edge().point.point()) <= self.b.distance(spoke.edge().point.point()) {
                                     // We have a straight line, so we add that point
                                     // (on the other end) as an intersection point.
@@ -1829,20 +1769,10 @@ impl<'a> Iterator for IntersectionIter<'a> {
                             }
                         }
                     }
-                    println!(
-                        "Using spoke: {}-{}",
-                        spoke.edge().point.point(),
-                        spoke.sym().edge().point.point()
-                    );
                     // Point a is on startOrg. This changes our initial question
                     // somewhat. We know that the line either intersects the edge
                     // opposite a, or also passes through one of the other vertices.
                     let opposite_edge = spoke.l_next();
-                    println!(
-                        "OppositeEdge: {}-{}",
-                        opposite_edge.edge().point.point(),
-                        opposite_edge.sym().edge().point.point()
-                    );
                     // Does the line pass through the vertex to the right?
                     let right = opposite_edge;
                     let right_point = right.edge().point.point();
@@ -1876,15 +1806,6 @@ impl<'a> Iterator for IntersectionIter<'a> {
                     return Some(intersection);
                 }
                 Intersection::Edge(intersecting_edge) => {
-                    println!(
-                        "Current Intersection (Edge): {}-{}",
-                        intersecting_edge.edge(self.triangulation).point.point(),
-                        intersecting_edge
-                            .sym()
-                            .edge(self.triangulation)
-                            .point
-                            .point()
-                    );
                     let intersecting_edge =
                         unsafe { self.triangulation.qeds.edge_a_ref(intersecting_edge) };
                     // Now we iterate through all of the triangles.
@@ -1938,11 +1859,6 @@ impl<'a> Iterator for IntersectionIter<'a> {
             if start.edge().point.point() == self.b || self.a == self.b {
                 return None;
             }
-            println!(
-                "StartEdge: {}-{}",
-                start.edge().point.point(),
-                start.sym().edge().point.point()
-            );
             if self.a == start.edge().point.point() {
                 // Special case.
                 self.current_intersection = Some(Intersection::Point(start.target()));
