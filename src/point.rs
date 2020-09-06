@@ -43,6 +43,16 @@ impl Point {
     }
 }
 
+#[cfg(test)]
+impl quickcheck::Arbitrary for Point {
+    fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Point {
+        Point {
+            x: SafeFloat::arbitrary(g).0,
+            y: SafeFloat::arbitrary(g).0,
+        }
+    }
+}
+
 impl Display for Point {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "({},{})", self.x, self.y)
@@ -94,6 +104,28 @@ impl SafeFloat {
     pub const MAX: SafeFloat = SafeFloat(4000.0);
     pub const MIN: SafeFloat = SafeFloat(-4000.0);
     pub const EPSILON: SafeFloat = SafeFloat(1.0 / (0xf_i64 as f64) as f64);
+    pub fn new(f: f64) -> Option<Self> {
+        let s = SafeFloat(f);
+        if s <= SafeFloat::MAX && s >= SafeFloat::MIN {
+            Some(s)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+impl quickcheck::Arbitrary for SafeFloat {
+    fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Self {
+        loop {
+            let frac: f64 = f64::arbitrary(g);
+            let f = SafeFloat::new(frac);
+            if let Some(f) = f {
+                break f;
+            }
+
+        }
+    }
 }
 
 impl Display for SafeFloat {

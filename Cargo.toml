@@ -8,3 +8,7 @@ edition = "2018"
 slab = "0.4"
 nalgebra = "0.21"
 rand = "0.7"
+
+[dev-dependencies]
+quickcheck = "0.9"
+quickcheck_macros = "0.9"
