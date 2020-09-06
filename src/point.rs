@@ -123,7 +123,6 @@ impl quickcheck::Arbitrary for SafeFloat {
             if let Some(f) = f {
                 break f;
             }
-
         }
     }
 }

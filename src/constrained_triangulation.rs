@@ -688,144 +688,145 @@ impl ConstrainedTriangulation {
 
         // TODO: don't consume this all at once, as indices may change.
         // 'main_loop: loop {
-            println!("Intersections from {} to {}", pa, pb);
-            let intersections: Vec<_> = self.find_intersections_between_points(pa, pb).collect();
-            for intersection in intersections {
-                // The first step is to ensure that we have both points. We produce
-                // new values "inserted_point" and "inserted_edge_target" to ensure
-                // they are up to date.
-                let (inserted_point, inserted_edge_target) = match intersection {
-                    // If the intersection is a point, it already exists and we
-                    // don't need to do anything.
-                    Intersection::Point(p) => {
-                        println!("Intersection at Point: {}", p.edge(self).point.point());
-                        (p.edge(self).point.point(), p)
-                    }
-                    // If the intersection is an edge, we need to add a point to
-                    // that edge.
-                    Intersection::Edge(edge_target) => {
-                        println!(
-                            "Intersection at Edge: {}-{}",
-                            edge_target.edge(self).point.point(),
-                            edge_target.sym().edge(self).point.point()
-                        );
-                        let edge_data = edge_target.edge(self);
-                        let edge_sym_data = edge_target.sym().edge(self);
-                        let ex = unsafe { self.qeds.edge_a_ref(edge_target) };
-                        let ex_sym = unsafe { self.qeds.edge_a_ref(edge_target) }.sym();
-                        let e = ex.edge();
-                        let e_sym = ex_sym.edge();
-                        if !edge_data.point.constraint {
-                            // If point is not constrained we don't care about
-                            // and continue to loop.
-                            continue;
-                        } else {
-                            if !edge_sym_data.point.constraint {
-                                panic!("Inconsistent edge");
-                            }
-                            // Otherwise we need to insert this intersection
-                            // point.
-                            // First find/choose the intersection point.
-                            let intersection_point: Point = match segment_intersection(
-                                (e.point.point(), e_sym.point.point()),
-                                (pa, pb),
-                            ) {
-                                IntersectionResult::Parallel => panic!("unexpected parallel"),
-                                IntersectionResult::LineIntersection(t, _u) => {
-                                    let p = e.point.point();
-                                    let r = e_sym.point.point() - p;
-                                    Point::new(p.x + t * r.x, p.y + t * r.y)
-                                }
-                            };
-                            println!("Intersection Point: {}", intersection_point);
-                            // Then insert the point.
-                            // assert_eq!(px, unsafe{self.qeds.edge_a_ref(px_edge).edge().point.point()});
-                            // inserted_edge_target is an edge leading away from
-                            // the inserted target (which will become px).
-                            let (inserted_point, inserted_edge_target) = unsafe {
-                                // Major changes occur here, pa_edge could even be deleted.
-                                drop(e);
-                                let target =
-                                    self.add_point_to_edge(edge_target, intersection_point);
-                                let inserted_point =
-                                    self.qeds.edge_a_ref(target).edge().point.point();
-                                (inserted_point, target)
-                            };
-                            // TODO: Do we need to update pa_edge here,
-                            // possibly? Apparently so, but not always. It's
-                            // likely being changed due to the swapping that
-                            // occurs in [`add_point_to_edge`]. It's not
-                            // immediately clear how to find a new one (at least
-                            // in a reliable provable way).
-                            // assert_eq!(pa, unsafe{self.qeds.edge_a_ref(pa_edge).edge().point.point()});
-                            (inserted_point, inserted_edge_target)
-                            // break inserted_point;
-                        }
-                    }
-                };
-                if pa == inserted_point {
-                    continue;
+        println!("Intersections from {} to {}", pa, pb);
+        let intersections: Vec<_> = self.find_intersections_between_points(pa, pb).collect();
+        for intersection in intersections {
+            // The first step is to ensure that we have both points. We produce
+            // new values "inserted_point" and "inserted_edge_target" to ensure
+            // they are up to date.
+            let (inserted_point, inserted_edge_target) = match intersection {
+                // If the intersection is a point, it already exists and we
+                // don't need to do anything.
+                Intersection::Point(p) => {
+                    println!("Intersection at Point: {}", p.edge(self).point.point());
+                    (p.edge(self).point.point(), p)
                 }
+                // If the intersection is an edge, we need to add a point to
+                // that edge.
+                Intersection::Edge(edge_target) => {
+                    println!(
+                        "Intersection at Edge: {}-{}",
+                        edge_target.edge(self).point.point(),
+                        edge_target.sym().edge(self).point.point()
+                    );
+                    let edge_data = edge_target.edge(self);
+                    let edge_sym_data = edge_target.sym().edge(self);
+                    let ex = unsafe { self.qeds.edge_a_ref(edge_target) };
+                    let ex_sym = unsafe { self.qeds.edge_a_ref(edge_target) }.sym();
+                    let e = ex.edge();
+                    let e_sym = ex_sym.edge();
+                    if !edge_data.point.constraint {
+                        // If point is not constrained we don't care about
+                        // and continue to loop.
+                        continue;
+                    } else {
+                        if !edge_sym_data.point.constraint {
+                            panic!("Inconsistent edge");
+                        }
+                        // Otherwise we need to insert this intersection
+                        // point.
+                        // First find/choose the intersection point.
+                        let intersection_point: Point = match segment_intersection(
+                            (e.point.point(), e_sym.point.point()),
+                            (pa, pb),
+                        ) {
+                            IntersectionResult::Parallel => panic!("unexpected parallel"),
+                            IntersectionResult::LineIntersection(t, _u) => {
+                                let p = e.point.point();
+                                let r = e_sym.point.point() - p;
+                                Point::new(p.x + t * r.x, p.y + t * r.y)
+                            }
+                        };
+                        println!("Intersection Point: {}", intersection_point);
+                        // Then insert the point.
+                        // assert_eq!(px, unsafe{self.qeds.edge_a_ref(px_edge).edge().point.point()});
+                        // inserted_edge_target is an edge leading away from
+                        // the inserted target (which will become px).
+                        let (inserted_point, inserted_edge_target) = unsafe {
+                            // Major changes occur here, pa_edge could even be deleted.
+                            drop(e);
+                            let target = self.add_point_to_edge(edge_target, intersection_point);
+                            let inserted_point = self.qeds.edge_a_ref(target).edge().point.point();
+                            (inserted_point, target)
+                        };
+                        // TODO: Do we need to update pa_edge here,
+                        // possibly? Apparently so, but not always. It's
+                        // likely being changed due to the swapping that
+                        // occurs in [`add_point_to_edge`]. It's not
+                        // immediately clear how to find a new one (at least
+                        // in a reliable provable way).
+                        // assert_eq!(pa, unsafe{self.qeds.edge_a_ref(pa_edge).edge().point.point()});
+                        (inserted_point, inserted_edge_target)
+                        // break inserted_point;
+                    }
+                }
+            };
+            if pa == inserted_point {
+                continue;
+            }
 
-                // Next we need to do some swapping to ensure that there is an
-                // edge between pa and inserted_point.
-                while let Some(intersection) = self
-                    .find_intersections_between_points(pa, inserted_point)
-                    .next()
-                {
-                    println!("intersection from {} to {}", pa, inserted_point);
-                    unsafe {
-                        match intersection {
-                            Intersection::Point(p) => {
-                                println!("pa: {}", pa);
-                                println!("inserted: {}", inserted_point);
-                                println!("p: {}", p.edge(self).point.point());
-                                unsafe {
-                                    debug_assert_eq!(
-                                        inserted_point,
-                                        self.qeds
-                                            .edge_a_ref(inserted_edge_target)
-                                            .edge()
-                                            .point
-                                            .point()
+            // Next we need to do some swapping to ensure that there is an
+            // edge between pa and inserted_point.
+            while let Some(intersection) = self
+                .find_intersections_between_points(pa, inserted_point)
+                .next()
+            {
+                println!("intersection from {} to {}", pa, inserted_point);
+                unsafe {
+                    match intersection {
+                        Intersection::Point(p) => {
+                            println!("pa: {}", pa);
+                            println!("inserted: {}", inserted_point);
+                            println!("p: {}", p.edge(self).point.point());
+                            unsafe {
+                                debug_assert_eq!(
+                                    inserted_point,
+                                    self.qeds
+                                        .edge_a_ref(inserted_edge_target)
+                                        .edge()
+                                        .point
+                                        .point()
+                                );
+                                // This is the only place pa_edge is used.
+                                let initial_edge =
+                                    self.qeds.edge_a_ref(inserted_edge_target).target();
+                                let mut edge = initial_edge;
+                                loop {
+                                    let first_point =
+                                        self.qeds.edge_a_ref(edge).edge().point.point();
+                                    let other_point =
+                                        self.qeds.edge_a_ref(edge).sym().edge().point.point();
+                                    println!(
+                                        "pa: {}, first_point: {}, other_point: {}",
+                                        pa, first_point, other_point
                                     );
-                                    // This is the only place pa_edge is used.
-                                    let initial_edge = self.qeds.edge_a_ref(inserted_edge_target).target();
-                                    let mut edge = initial_edge;
-                                    loop {
-                                        let first_point = self.qeds.edge_a_ref(edge).edge().point.point();
-                                        let other_point = self.qeds.edge_a_ref(edge).sym().edge().point.point();
-                                        println!(
-                                            "pa: {}, first_point: {}, other_point: {}",
-                                            pa, first_point, other_point
-                                        );
-                                        debug_assert_eq!(inserted_point, first_point);
-                                        if other_point == pa {
-                                            self.qeds.edge_a_mut(edge).point.constraint = true;
-                                            self.qeds.edge_a_mut(edge.sym()).point.constraint = true;
-                                            pa = inserted_point;
-                                            break;
-                                        } else {
-                                            edge = self.qeds.edge_a_ref(edge).onext().target();
-                                            if edge == initial_edge {
-                                                panic!("looped around ring (add_constraint)");
-                                            }
+                                    debug_assert_eq!(inserted_point, first_point);
+                                    if other_point == pa {
+                                        self.qeds.edge_a_mut(edge).point.constraint = true;
+                                        self.qeds.edge_a_mut(edge.sym()).point.constraint = true;
+                                        pa = inserted_point;
+                                        break;
+                                    } else {
+                                        edge = self.qeds.edge_a_ref(edge).onext().target();
+                                        if edge == initial_edge {
+                                            panic!("looped around ring (add_constraint)");
                                         }
                                     }
                                 }
                             }
-                            Intersection::Edge(e) => {
-                                let edge = self.qeds.edge_a_mut(e);
-                                if !edge.point.constraint {
-                                    self.swap(e);
-                                } else {
-                                    unreachable!()
-                                }
+                        }
+                        Intersection::Edge(e) => {
+                            let edge = self.qeds.edge_a_mut(e);
+                            if !edge.point.constraint {
+                                self.swap(e);
+                            } else {
+                                unreachable!()
                             }
                         }
                     }
                 }
             }
+        }
         // }
         Some(())
     }
@@ -2901,6 +2902,29 @@ mod tests {
         triangulation.add_constraint(p4, p5);
         triangulation.add_constraint(p5, p1);
         triangulation.add_constraint(p1, p3);
+    }
+
+    #[test]
+    fn regress() {
+        let mut triangulation = ConstrainedTriangulation::new();
+        let segments = vec![
+            (
+                Point::new(-75.3645612469715, 10.649471266802962),
+                Point::new(11.264242662961536, -74.1427143080474),
+            ),
+            (
+                Point::new(-65.08752072884896, 85.23877185897558),
+                Point::new(-36.55529677285707, 25.159802183655742),
+            ),
+            (
+                Point::new(-71.01084733411076, 30.660749902036656),
+                Point::new(67.62855075915658, -89.10279376500583),
+            ),
+        ];
+        for (p1, p2) in segments.iter() {
+            triangulation.add_constraint(*p1, *p2);
+        }
+        valid_triangulation(&triangulation);
     }
 
     #[ignore]
