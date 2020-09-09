@@ -684,6 +684,7 @@ impl ConstrainedTriangulation {
         if pa == pb {
             return Some(());
         }
+        // debug_assert_eq!(pa, pa_edge.edge(self).point.point());
 
         self.update_bounds(pa);
         self.update_bounds(pb);
@@ -715,15 +716,19 @@ impl ConstrainedTriangulation {
             }
 
             println!("constraint intersection found");
-            let px = {
+            // debug_assert_eq!(pa, pa_edge.edge(self).point.point());
+            // In the course of this block, pa_edge gets changed. This makes
+            // sense as we are inserting/deleting.
+            let (px, px_edge) = {
                 match self.find_next_constraint_intersection(pa, pb) {
-                    None => pb, // how do we get pb_edge
+                    // None => pb, // how do we get pb_edge
+                    None => panic!("We require a point at pb"),
                     Some(intersection) => match intersection {
                         // If the intersection is a point, it already exists and we
                         // don't need to do anything.
                         Intersection::Point(p) => {
                             println!("Intersection at Point: {}", p.edge(self).point.point());
-                            p.edge(self).point.point()
+                            (p.edge(self).point.point(), p)
                         }
                         // If the intersection is an edge, we need to add a point to
                         // that edge.
@@ -782,7 +787,7 @@ impl ConstrainedTriangulation {
                                 // immediately clear how to find a new one (at least
                                 // in a reliable provable way).
                                 // assert_eq!(pa, unsafe{self.qeds.edge_a_ref(pa_edge).edge().point.point()});
-                                inserted_point
+                                (inserted_point, inserted_edge_target)
                                 // break inserted_point;
                             }
                         }
@@ -790,6 +795,7 @@ impl ConstrainedTriangulation {
                 }
             };
             println!("found or made intersection");
+            // debug_assert_eq!(pa, pa_edge.edge(self).point.point());
             // We now know that there are only unconstrained edges between pa
             // and px (possible aligned). There can be at mose one aligned edge,
             // this will be retuened to us as point intersection. This can only
@@ -797,42 +803,82 @@ impl ConstrainedTriangulation {
             // not.
 
             // First find all of the intersecting unconstrained edges and put
-            // them in a vector.
-            let mut intersecting_soft: Vec<EdgeTarget> = self
-                .find_intersections_between_points(pa, px)
-                .filter_map(|intersection| match intersection {
-                    Intersection::Point(_) => None,
-                    Intersection::Edge(e) => {
-                        if !e.edge(self).point.constraint {
-                            Some(e)
-                        } else {
-                            None
-                        }
-                    }
-                })
-                .collect();
-            let mut i = 0;
+            // them in a vector. TODO: We should understand this double looping
+            // a little more.
+            let mut iter_count_swap = 0;
             loop {
+                if iter_count_swap > 300 {
+                    panic!("Swap iterations exceeded");
+                } else {
+                    iter_count_swap += 1;
+                }
+                let mut intersecting_soft: Vec<EdgeTarget> = self
+                    .find_intersections_between_points(pa, px)
+                    .filter_map(|intersection| match intersection {
+                        Intersection::Point(_) => None,
+                        Intersection::Edge(e) => {
+                            if !e.edge(self).point.constraint {
+                                Some(e)
+                            } else {
+                                None
+                            }
+                        }
+                    })
+                    .collect();
                 if intersecting_soft.len() == 0 {
                     break;
                 }
-                i = std::cmp::min(i, intersecting_soft.len());
-                let edge = intersecting_soft[i];
-                if unsafe { self.concave_test(edge) } {
-                    unsafe { self.swap(edge) };
-                    intersecting_soft.swap_remove(i);
-                    i = 0;
-                } else {
-                    debug_assert_ne!(intersecting_soft.len(), 1, "could not swap all");
-                    i += 1;
+                let mut i = 0;
+                let mut iter_count_swap_inner = 0;
+                loop {
+                    println!("intersecting(soft): {}", intersecting_soft.len());
+                    if iter_count_swap_inner > 300 {
+                        // panic!("Swap iterations (inner) exceeded");
+                        println!("Swap iterations (inner) exceeded");
+                        break;
+                    } else {
+                        iter_count_swap_inner += 1;
+                    }
+                    if intersecting_soft.len() == 0 {
+                        break;
+                    }
+                    if i >= intersecting_soft.len() {
+                        break;
+                    }
+                    let edge = intersecting_soft[i];
+                    if unsafe { self.concave_test(edge) } {
+                        unsafe { self.swap(edge) };
+                        intersecting_soft.swap_remove(i);
+                        i = 0;
+                    } else {
+                        println!("could not swap {}, will swap {}", i, i + 1);
+                        // debug_assert_ne!(intersecting_soft.len(), 1, "could not swap all");
+                        i += 1;
+                    }
                 }
             }
+            debug_assert_eq!(
+                self.find_intersections_between_points(pa, px)
+                    .filter_map(|intersection| match intersection {
+                        Intersection::Point(_) => None,
+                        Intersection::Edge(e) => {
+                            if !e.edge(self).point.constraint {
+                                Some(e)
+                            } else {
+                                None
+                            }
+                        }
+                    })
+                    .count(),
+                0
+            );
             // At this point everything should be aligned, so we just need to
             // rotate around and add the constraint.
             println!("edges aligned, adding constraint from {} to {}", pa, px);
 
             unsafe {
-                let mut edge = pa_edge;
+                debug_assert_eq!(px, px_edge.edge(self).point.point());
+                let mut edge = px_edge;
                 let initial_edge = edge;
                 loop {
                     let first_point = self.qeds.edge_a_ref(edge).edge().point.point();
@@ -841,24 +887,27 @@ impl ConstrainedTriangulation {
                         "pa: {}, first_point: {}, other_point: {}",
                         pa, first_point, other_point
                     );
-                    debug_assert_eq!(pa, first_point);
-                    if other_point == px {
+                    debug_assert_eq!(px, first_point);
+                    if other_point == pa {
                         self.qeds.edge_a_mut(edge).point.constraint = true;
                         self.qeds.edge_a_mut(edge.sym()).point.constraint = true;
                         pa = px;
-                        pa_edge = edge.sym();
+                        // pa_edge = edge.sym();
+                        // debug_assert_eq!(pa, pa_edge.edge(self).point.point());
                         break;
                     } else {
                         edge = self.qeds.edge_a_ref(edge).onext().target();
                         if edge == initial_edge {
                             panic!("looped around ring (add_constraint)");
+                            // println!("looped around ring (add_constraint)");
+                            // return Some(());
                         }
                     }
                 }
             }
-            debug_assert_eq!(pa, pa_edge.edge(self).point.point())
+            println!("done constraint piece");
+            // debug_assert_eq!(pa, pa_edge.edge(self).point.point());
         }
-        // }
         Some(())
     }
 
@@ -3051,6 +3100,270 @@ mod tests {
         valid_triangulation(&triangulation);
     }
 
+    #[test]
+    fn regress3() {
+        let mut triangulation = ConstrainedTriangulation::new();
+        let segments = vec![
+            (
+                Point {
+                    x: -0.4214359290103573,
+                    y: 95.82816145300376,
+                },
+                Point {
+                    x: -9.699326930357884,
+                    y: 26.125595226387333,
+                },
+            ),
+            (
+                Point {
+                    x: -13.147969911139384,
+                    y: -54.45197788876022,
+                },
+                Point {
+                    x: -44.33529262658724,
+                    y: -75.64912335744887,
+                },
+            ),
+            (
+                Point {
+                    x: -16.705404907959036,
+                    y: 35.1977871928658,
+                },
+                Point {
+                    x: 60.46183760891148,
+                    y: 10.128488435745282,
+                },
+            ),
+            (
+                Point {
+                    x: -59.73082630206363,
+                    y: -57.035655725149056,
+                },
+                Point {
+                    x: 49.69180679531209,
+                    y: 96.08879129160505,
+                },
+            ),
+            (
+                Point {
+                    x: 12.685519199969605,
+                    y: 78.74650844233386,
+                },
+                Point {
+                    x: -0.5177468902998896,
+                    y: -41.830391168991895,
+                },
+            ),
+            (
+                Point {
+                    x: -91.33303213105921,
+                    y: 42.425551365690154,
+                },
+                Point {
+                    x: 67.18820631566183,
+                    y: 49.651436020714186,
+                },
+            ),
+            (
+                Point {
+                    x: 19.547046919264545,
+                    y: 21.14100619435102,
+                },
+                Point {
+                    x: 43.67012362837994,
+                    y: -56.81803213245602,
+                },
+            ),
+        ];
+        for (p1, p2) in segments.iter() {
+            triangulation.add_constraint(*p1, *p2);
+        }
+        valid_triangulation(&triangulation);
+    }
+
+    #[test]
+    fn regress4() {
+        let mut triangulation = ConstrainedTriangulation::new();
+        let segments = vec![
+            (
+                Point {
+                    x: 49.354794208915905,
+                    y: 77.9312265303424,
+                },
+                Point {
+                    x: -11.492740263412088,
+                    y: 8.956223279493656,
+                },
+            ),
+            (
+                Point {
+                    x: 90.35804944791943,
+                    y: -64.48450750858385,
+                },
+                Point {
+                    x: 25.29536887506309,
+                    y: 8.406416670169662,
+                },
+            ),
+            (
+                Point {
+                    x: 46.09321063375256,
+                    y: 61.22935053925707,
+                },
+                Point {
+                    x: -26.439979432037305,
+                    y: 51.94522246412245,
+                },
+            ),
+            (
+                Point {
+                    x: 96.6694613097255,
+                    y: 45.14085139658687,
+                },
+                Point {
+                    x: 58.35546494466675,
+                    y: 53.009402448096495,
+                },
+            ),
+            (
+                Point {
+                    x: 58.99661219941143,
+                    y: 65.20711681694809,
+                },
+                Point {
+                    x: -63.66585352841398,
+                    y: -59.20567981731186,
+                },
+            ),
+        ];
+        for (p1, p2) in segments.iter() {
+            triangulation.add_constraint(*p1, *p2);
+        }
+        valid_triangulation(&triangulation);
+    }
+
+    #[test]
+    fn regress5() {
+        let mut triangulation = ConstrainedTriangulation::new();
+        let segments = vec![
+            (
+                Point {
+                    x: -51.400285762967044,
+                    y: 78.08416289394077,
+                },
+                Point {
+                    x: 73.94719688650767,
+                    y: -9.952271890507092,
+                },
+            ),
+            (
+                Point {
+                    x: -80.05915835704234,
+                    y: 97.55389372322861,
+                },
+                Point {
+                    x: 75.64795651512509,
+                    y: -27.169794412596275,
+                },
+            ),
+            (
+                Point {
+                    x: 81.99617838589236,
+                    y: 8.336094155253178,
+                },
+                Point {
+                    x: 99.33459619053124,
+                    y: -28.76119989156618,
+                },
+            ),
+            (
+                Point {
+                    x: 52.06631213621819,
+                    y: 91.79642677407745,
+                },
+                Point {
+                    x: 98.04001031185186,
+                    y: -81.61857001089774,
+                },
+            ),
+        ];
+        for (p1, p2) in segments.iter() {
+            triangulation.add_constraint(*p1, *p2);
+        }
+        valid_triangulation(&triangulation);
+    }
+
+    #[test]
+    fn regress6() {
+        let mut triangulation = ConstrainedTriangulation::new();
+        let segments = vec![
+            (
+                Point {
+                    x: -71.48547038818833,
+                    y: -74.39322987310905,
+                },
+                Point {
+                    x: -89.94096477395534,
+                    y: 19.301100606945766,
+                },
+            ),
+            (
+                Point {
+                    x: -86.9828479383787,
+                    y: 0.05961466115694236,
+                },
+                Point {
+                    x: 43.25946276642907,
+                    y: -77.91468968915898,
+                },
+            ),
+            (
+                Point {
+                    x: -4.142054219662228,
+                    y: 70.85270987086068,
+                },
+                Point {
+                    x: -90.96995169850732,
+                    y: 36.77453032058807,
+                },
+            ),
+            (
+                Point {
+                    x: -73.374254157982,
+                    y: 87.53245031954737,
+                },
+                Point {
+                    x: -46.959018139029226,
+                    y: -48.21755053303174,
+                },
+            ),
+            (
+                Point {
+                    x: 97.61862767011499,
+                    y: 56.159609123931716,
+                },
+                Point {
+                    x: -60.03876659083822,
+                    y: -4.969101911120703,
+                },
+            ),
+            (
+                Point {
+                    x: -99.10800691452306,
+                    y: 43.80328990194849,
+                },
+                Point {
+                    x: -58.187890315932435,
+                    y: -11.073968979166835,
+                },
+            ),
+        ];
+        for (p1, p2) in segments.iter() {
+            triangulation.add_constraint(*p1, *p2);
+        }
+        valid_triangulation(&triangulation);
+    }
+
     #[ignore]
     #[test]
     fn simple_intersections() {
@@ -3066,14 +3379,13 @@ mod tests {
         valid_triangulation(&triangulation);
         {
             // single intersection
-            let intersections = triangulation
-                .find_intersections_between_points(Point::new(2.0, 2.0), Point::new(9.0, 8.0));
-            assert_eq!(intersections.clone().count(), 1);
-            let first_intersection = unsafe {
-                triangulation
-                    .qeds
-                    .edge_a_ref(intersections.collect::<Vec<_>>()[0].target())
-            };
+            let intersections: Vec<_> = triangulation
+                .find_intersections_between_points(Point::new(2.0, 2.0), Point::new(9.0, 8.0))
+                .collect();
+            println!("intersections: {:?}", intersections);
+            assert_eq!(intersections.len(), 1);
+            let first_intersection =
+                unsafe { triangulation.qeds.edge_a_ref(intersections[0].target()) };
             // The edges found have a specified direction.
             assert_eq!(
                 (
@@ -3330,7 +3642,7 @@ mod tests {
         true
     }
 
-    #[ignore]
+    // #[ignore]
     #[quickcheck]
     fn many_random_segment(segments: Vec<(Point, Point)>) -> bool {
         let mut full_map = FullMap::new();
