@@ -6,6 +6,7 @@ extern crate quickcheck;
 extern crate quickcheck_macros;
 
 pub mod constrained_triangulation;
+pub mod surface_triangulation;
 pub mod point;
 pub mod qeds;
 pub mod triangulation;
