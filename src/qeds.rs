@@ -264,6 +264,24 @@ impl<AData: Clone, BData: Default> Qeds<AData, BData> {
     }
 }
 
+// impl<AData: Clone, BData: Default> Qeds<AData, BData> {
+//     /// Connect the Org of a with the Dest of b by creating a new edge. TODO: we
+//     /// need to special case infinite edges.
+//     pub fn connect_ab(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRefA<AData, BData> {
+//         unsafe {
+//             // First, make the new edge.
+//             // Set the Org of e to the Dest of a
+//             let p1 = self.edge_a(edge_a.sym()).point.clone();
+//             // Set the Dest of e to the Org of b
+//             let p2 = self.edge_a(edge_b).point.clone();
+//             let q_target = self.make_edge_with_ab(p1, p2, ).target;
+//             self.splice(q_target, self.edge_ref(edge_a).l_next().target);
+//             self.splice(q_target.sym(), edge_b);
+//             self.edge_a_ref(q_target)
+//         }
+//     }
+// }
+
 impl<AData, BData> Qeds<AData, BData> {
     /// Create the simplest [`Qeds`] with a single [`Edge`] and a single
     /// [`Face`]. Covers the whole sphere.
@@ -296,6 +314,13 @@ impl<AData, BData> Qeds<AData, BData> {
 
     pub unsafe fn edge_a_ref(&self, target: EdgeTarget) -> EdgeRefA<AData, BData> {
         EdgeRefA {
+            qeds: &self,
+            target,
+        }
+    }
+
+    pub unsafe fn edge_b_ref(&self, target: EdgeTarget) -> EdgeRefB<AData, BData> {
+        EdgeRefB {
             qeds: &self,
             target,
         }
@@ -614,6 +639,12 @@ impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
         // created.
         unsafe { self.qeds().edge_a(self.target()) }
     }
+    // pub fn edge_mut(&mut self) -> &Edge<AData> {
+    //     // We know we can use this unsafe because lifetime gurantee that the
+    //     // Qeds data structure has not been modified since this EdgeRef was
+    //     // created.
+    //     unsafe { self.qeds().edge_a_mut(self.target()) }
+    // }
 
     #[inline(always)]
     pub fn offset_r(&self, offset: u8) -> Self {

@@ -43,6 +43,48 @@ impl Point {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+pub struct Point3 {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+impl Point3 {
+    pub fn new(x: f64, y: f64,z:f64) -> Self {
+        Self { x, y ,z}
+    }
+    pub fn midpoint(self, other: Self) -> Self {
+        Self {
+            x: (self.x + other.x) / 2.0,
+            y: (self.y + other.y) / 2.0,
+            z: (self.z + other.z) / 2.0,
+        }
+    }
+
+    pub fn is_finite(&self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
+    }
+
+    pub fn distance(&self, other: Self) -> f64 {
+        ((other.x - self.x).powi(2) + (other.y - self.y).powi(2) + (other.z - self.z).powi(2)).sqrt()
+    }
+
+    pub fn snap(&mut self) {
+        self.x *= 1.0e6;
+        self.x = self.x.round();
+        self.x *= 1.0e-6;
+
+        self.y *= 1.0e6;
+        self.y = self.y.round();
+        self.y *= 1.0e-6;
+
+        self.y *= 1.0e6;
+        self.y = self.z.round();
+        self.y *= 1.0e-6;
+    }
+}
+
 #[cfg(test)]
 impl quickcheck::Arbitrary for Point {
     fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Point {
