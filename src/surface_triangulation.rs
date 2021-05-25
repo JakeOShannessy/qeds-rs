@@ -116,6 +116,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         mut edge_target: EdgeTarget,
         point: Point,
         data: T,
+        retriangulate: bool
     ) -> EdgeTarget {
         unsafe {
             let first = self.qeds.edge_a_ref(edge_target).edge().point.point;
@@ -161,7 +162,10 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             }
             edge_target = self.qeds.edge_a_ref(base).oprev().target();
             let e = edge_target;
-            self.retriangulate_suspect_edges(e, point, first);
+            // We have to turn this off when doing bulk changes.
+            if retriangulate {
+                self.retriangulate_suspect_edges(e, point, first);
+            }
             debug_assert_eq!(
                 self.qeds.edge_a_ref(return_value).edge().point.point(),
                 point
@@ -185,7 +189,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         unsafe { self.qeds.edge_a_ref(e) }
     }
     /// This function accounts for the point lying on an existing edge or point.
-    fn add_to_l_face(&mut self, edge_target: EdgeTarget, point: Point, data: T) -> EdgeTarget {
+    fn add_to_l_face(&mut self, edge_target: EdgeTarget, point: Point, data: T,retriangulate:bool) -> EdgeTarget {
         unsafe {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
@@ -200,19 +204,19 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             } else if self.qeds.edge_a_ref(edge_target).lies_right(point) == Lies::On {
                 // The point lies on an edge, so we must invoke a procedure that
                 // deletes and replaces that edge.
-                self.add_point_to_edge_unchecked(edge_target, point, data)
+                self.add_point_to_edge_unchecked(edge_target, point, data,retriangulate)
             } else {
-                self.add_to_quad_unchecked(edge_target, point, data)
+                self.add_to_quad_unchecked(edge_target, point, data, retriangulate)
             }
         }
     }
     /// The edge this returns should always have the added point at its origin.
-    pub fn add_point(&mut self, mut point: Point, data: T) -> Option<EdgeTarget> {
+    pub fn add_point(&mut self, mut point: Point, data: T,retriangulate:bool) -> Option<EdgeTarget> {
         point.snap();
         self.update_bounds(point);
         if let Some(edge_ref) = self.locate(point) {
             let edge_target = edge_ref.target();
-            Some(self.add_to_l_face(edge_target, point, data))
+            Some(self.add_to_l_face(edge_target, point, data,retriangulate))
         } else {
             // Point was out of bounds (probably)
             None
@@ -227,6 +231,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         mut edge_target: EdgeTarget,
         point: Point,
         data: T,
+        retriangulate:bool
     ) -> EdgeTarget {
         unsafe {
             {
@@ -238,7 +243,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
                 self.qeds.delete(edge_target);
                 edge_target = oprev;
             }
-            let return_value = self.add_to_quad_unchecked(edge_target, point, data);
+            let return_value = self.add_to_quad_unchecked(edge_target, point, data,retriangulate);
             return_value
         }
     }
@@ -250,6 +255,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         edge_target: EdgeTarget,
         point: Point,
         data: T,
+        retriangulate:bool
     ) -> EdgeTarget {
         unsafe {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
@@ -260,7 +266,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             } else if point_b == point {
                 edge_target.sym()
             } else {
-                self.add_point_to_edge_unchecked(edge_target, point, data)
+                self.add_point_to_edge_unchecked(edge_target, point, data,retriangulate)
             }
         }
     }
@@ -553,6 +559,9 @@ impl<'a, T: Clone> Iterator for SegmentsIterMut<'a, T> {
 impl<T> SurfaceTriangulation<T> {
     pub fn segments(&self) -> SegmentsIter<T> {
         SegmentsIter::new(self)
+    }
+    pub fn base_targets(&self) -> impl Iterator<Item=EdgeTarget> + '_ {
+        self.qeds.quads.iter().map(|(i,_)|EdgeTarget::new(i,0,0))
     }
     pub fn segments_mut(&mut self) -> SegmentsIterMut<T> {
         SegmentsIterMut::new(self)
@@ -1070,6 +1079,17 @@ impl<'a, T: Clone> Iterator for TriangleIter<'a, T> {
         let tri_a = self.raw_triangles.next()?;
         let tri_b = tri_a.l_next();
         let tri_c = tri_b.l_next();
+        let ccw = is_ccw(
+            tri_a.edge().point.point,
+            tri_b.edge().point.point,
+            tri_c.edge().point.point,
+        );
+        if !ccw {
+            println!("a: {}",tri_a.edge().point.point);
+            println!("b: {}",tri_b.edge().point.point);
+            println!("c: {}",tri_c.edge().point.point);
+        }
+        assert!(ccw);
         Some((
             tri_a.edge().point.clone(),
             tri_b.edge().point.clone(),
@@ -1327,7 +1347,7 @@ fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f6
         + c * determinant_2x2(d, e, g, h)
 }
 
-fn is_ccw(p1: Point, p2: Point, p3: Point) -> bool {
+pub fn is_ccw(p1: Point, p2: Point, p3: Point) -> bool {
     determinant_3x3(p1.x, p1.y, 1.0, p2.x, p2.y, 1.0, p3.x, p3.y, 1.0) > 0.0
 }
 
@@ -1394,7 +1414,7 @@ mod tests {
                         quad.edges_b[1].point
                     );
                 }
-                triangulation.add_point(centroid, (0.0, 0.0));
+                triangulation.add_point(centroid, (0.0, 0.0), true);
                 for (i, quad) in triangulation.qeds.quads.iter() {
                     println!(
                         "AfterQuad[{}]: {}-{} {:?}-{:?}",

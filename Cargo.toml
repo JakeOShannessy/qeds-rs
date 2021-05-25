@@ -6,9 +6,10 @@ edition = "2018"
 
 [dependencies]
 slab = "0.4"
-nalgebra = "0.21"
-rand = "0.7"
+nalgebra = "0.26"
+rand = "0.8"
+getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
-quickcheck = "0.9"
-quickcheck_macros = "0.9"
+quickcheck = "*"
+quickcheck_macros = "*"
