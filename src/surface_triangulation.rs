@@ -315,9 +315,6 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 bounds: None,
             }
         };
-        for (i, quad) in result.qeds.quads.iter() {
-            println!("Quad[{}]: {:?}", i, quad.edges_b);
-        }
         result
     }
 
