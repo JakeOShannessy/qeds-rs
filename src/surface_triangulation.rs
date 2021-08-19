@@ -543,7 +543,8 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 for (a, b, c) in self.triangles() {
                     println!("Triangle: {:?}", (a.point, b.point, c.point));
                 }
-                panic!("locating failed for: {}", point);
+                // panic!("locating failed for: {}", point);
+                return None;
             }
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
