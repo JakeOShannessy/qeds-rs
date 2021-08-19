@@ -87,7 +87,7 @@ impl Point3 {
 
 #[cfg(test)]
 impl quickcheck::Arbitrary for Point {
-    fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Point {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Point {
         Point {
             x: SafeFloat::arbitrary(g).0,
             y: SafeFloat::arbitrary(g).0,
@@ -158,7 +158,7 @@ impl SafeFloat {
 
 #[cfg(test)]
 impl quickcheck::Arbitrary for SafeFloat {
-    fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Self {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         loop {
             let frac: f64 = f64::arbitrary(g);
             let f = SafeFloat::new(frac);

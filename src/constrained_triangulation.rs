@@ -3642,7 +3642,7 @@ mod tests {
         true
     }
 
-    // #[ignore]
+    #[ignore]
     #[quickcheck]
     fn many_random_segment(segments: Vec<(Point, Point)>) -> bool {
         let mut full_map = FullMap::new();

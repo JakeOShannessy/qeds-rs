@@ -11,5 +11,5 @@ rand = "0.8"
 getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
-quickcheck = "*"
-quickcheck_macros = "*"
+quickcheck = "1"
+quickcheck_macros = "1"
