@@ -51,8 +51,8 @@ pub struct Point3 {
 }
 
 impl Point3 {
-    pub fn new(x: f64, y: f64,z:f64) -> Self {
-        Self { x, y ,z}
+    pub fn new(x: f64, y: f64, z: f64) -> Self {
+        Self { x, y, z }
     }
     pub fn midpoint(self, other: Self) -> Self {
         Self {
@@ -67,7 +67,8 @@ impl Point3 {
     }
 
     pub fn distance(&self, other: Self) -> f64 {
-        ((other.x - self.x).powi(2) + (other.y - self.y).powi(2) + (other.z - self.z).powi(2)).sqrt()
+        ((other.x - self.x).powi(2) + (other.y - self.y).powi(2) + (other.z - self.z).powi(2))
+            .sqrt()
     }
 
     pub fn snap(&mut self) {

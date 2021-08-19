@@ -567,7 +567,7 @@ pub enum Lies {
     On,
 }
 
-fn lies_left(point: Point, pa: Point, pb: Point) -> bool {
+pub fn lies_left(point: Point, pa: Point, pb: Point) -> bool {
     print!("Does {} lie to the left of: {} - {}", point, pa, pb);
     // We have special treatment of infinite edges.
     if !pa.is_finite() && !pb.is_finite() {
