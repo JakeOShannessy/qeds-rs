@@ -141,14 +141,27 @@ impl<T> SurfaceTriangulation<T> {
         self.lies_right(edge_ref, point) == Lies::Yes
     }
 
-    pub fn lies_left<'a>(&self, edge_ref: EdgeRefA<'a, VertexIndex, Space>, point: Point) -> bool {
+    pub fn lies_right_or_on<'a>(
+        &self,
+        edge_ref: EdgeRefA<'a, VertexIndex, Space>,
+        point: Point,
+    ) -> bool {
+        self.lies_right(edge_ref, point) != Lies::No
+    }
+
+    pub fn lies_left<'a>(&self, edge_ref: EdgeRefA<'a, VertexIndex, Space>, point: Point) -> Lies {
         let pa = self.vertices.get(edge_ref.edge().point).unwrap().point();
         let pb = self
             .vertices
             .get(edge_ref.sym().edge().point)
             .unwrap()
             .point();
-        lies_left(point, pa, pb)
+        // We have special treatment of infinite edges.
+        match left_or_right(pa, pb, point) {
+            Direction::Right => Lies::No,
+            Direction::Straight => Lies::On,
+            Direction::Left => Lies::Yes,
+        }
     }
 
     pub fn in_left_face<'a>(
@@ -157,7 +170,29 @@ impl<T> SurfaceTriangulation<T> {
         point: Point,
     ) -> bool {
         for edge in edge_ref.l_face().edges.iter() {
-            let is_left = self.lies_left(*edge, point);
+            let is_left = match self.lies_left(*edge, point) {
+                Lies::No => false,
+                Lies::On => false,
+                Lies::Yes => true,
+            };
+            if !is_left {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn on_left_face<'a>(
+        &self,
+        edge_ref: EdgeRefA<'a, VertexIndex, Space>,
+        point: Point,
+    ) -> bool {
+        for edge in edge_ref.l_face().edges.iter() {
+            let is_left = match self.lies_left(*edge, point) {
+                Lies::No => false,
+                Lies::On => true,
+                Lies::Yes => true,
+            };
             if !is_left {
                 return false;
             }
@@ -530,6 +565,28 @@ impl<T: Clone> SurfaceTriangulation<T> {
         None
     }
 
+    pub fn neighbouring_points<'a>(
+        &'a self,
+        edge: EdgeRefA<'a, VertexIndex, Space>,
+    ) -> Vec<EdgeRefA<'a, VertexIndex, Space>> {
+        let mut neighbouring_refs = vec![edge.sym()];
+        let mut current_edge = edge;
+        loop {
+            current_edge = current_edge.onext();
+            if current_edge == edge {
+                break;
+            }
+            neighbouring_refs.push(current_edge.sym());
+        }
+        neighbouring_refs
+    }
+
+    pub fn get_segment(&self, edge: EdgeRefA<'_, VertexIndex, Space>) -> (Point, Point) {
+        let p1 = self.vertices.get(edge.edge().point).unwrap().point;
+        let p2 = self.vertices.get(edge.sym().edge().point).unwrap().point;
+        (p1, p2)
+    }
+
     // TODO: This has not yet been proved to be stable. It may also loop
     // inifintely, particularly with constrianed triangulations.
     pub fn locate(&self, point: Point) -> Option<EdgeRefA<VertexIndex, Space>> {
@@ -543,12 +600,14 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 for (a, b, c) in self.triangles() {
                     println!("Triangle: {:?}", (a.point, b.point, c.point));
                 }
-                // panic!("locating failed for: {}", point);
+                panic!("locating failed for: {}", point);
                 return None;
             }
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
             let onext_first: bool = rng.gen();
+            let segment = self.get_segment(e);
+            // eprintln!("checking: {:?}", segment);
             if point == self.vertices.get(e.edge().point).unwrap().point {
                 break Some(e);
             } else if point == self.vertices.get(e.sym().edge().point).unwrap().point {
@@ -558,18 +617,21 @@ impl<T: Clone> SurfaceTriangulation<T> {
             } else if self.lies_right_strict(e, point) {
                 e = e.sym();
             } else {
+                let has_left_face = e.rot().sym().edge().point == Space::In;
+                // eprintln!("e HasLeftFace: {:?}", has_left_face);
+                #[allow(clippy::collapsible_else_if)]
                 if onext_first {
-                    if !self.lies_right_strict(e.onext(), point) {
+                    if has_left_face && !self.lies_right_strict(e.onext(), point) {
                         e = e.onext();
-                    } else if !self.lies_right_strict(e.d_prev(), point) {
+                    } else if has_left_face && !self.lies_right_strict(e.d_prev(), point) {
                         e = e.d_prev();
                     } else {
                         break Some(e);
                     }
                 } else {
-                    if !self.lies_right_strict(e.d_prev(), point) {
+                    if has_left_face && !self.lies_right_strict(e.d_prev(), point) {
                         e = e.d_prev();
-                    } else if !self.lies_right_strict(e.onext(), point) {
+                    } else if has_left_face && !self.lies_right_strict(e.onext(), point) {
                         e = e.onext();
                     } else {
                         break Some(e);
@@ -577,6 +639,28 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 }
             }
         };
+        let edge = edge.map(|e| {
+            let has_left_face = e.rot().sym().edge().point == Space::In;
+            if !has_left_face {
+                e.sym()
+            } else {
+                e
+            }
+        });
+        let is_on = self.on_left_face(edge.unwrap(), point);
+        if !is_on {
+            return None;
+            // let sega = self.get_segment(edge.unwrap());
+            // let segb = self.get_segment(edge.unwrap().onext());
+
+            // eprintln!("Point: {}", point);
+            // eprintln!("SegmentA: {:?}", sega);
+            // eprintln!("SegmentB: {:?}", segb);
+        }
+        // #[cfg(debug_assertions)]
+        // {
+        //     assert!(is_on);
+        // }
         edge
     }
 
@@ -972,7 +1056,7 @@ impl<'a, T: Clone> Iterator for IntersectionIter<'a, T> {
                     // If it passes through neither, then the intersecting edges
                     // is simply the opposite edge, BUT, if pb is to the left of
                     // the opposite edge, there is no intersection.
-                    if self.triangulation.lies_left(opposite_edge, self.b) {
+                    if self.triangulation.lies_left(opposite_edge, self.b) == Lies::Yes {
                         // println!("Past End");
                         return None;
                     }
@@ -1628,6 +1712,8 @@ pub fn get_edge<T>(
 
 #[cfg(test)]
 mod tests {
+    use core::panic;
+
     use super::*;
 
     #[test]
@@ -1831,6 +1917,128 @@ mod tests {
         // triangulation.add_point(p1, (0.0, 0.0));
         debug_assert_spaces(&triangulation);
         assert_eq!(triangulation.triangles().count(), 2);
+    }
+
+    #[test]
+    fn surface_neighbours() {
+        let v1 = Point::new(0.0, 0.0);
+        let v2 = Point::new(5.0, 0.0);
+        let v3 = Point::new(5.0, 5.0);
+        let mut triangulation = SurfaceTriangulation::new((v1, 0.0), (v2, 0.0), (v3, 0.0));
+        assert_eq!(triangulation.triangles().count(), 1);
+        debug_assert_spaces(&triangulation);
+        let start_edge = triangulation.some_edge_a().unwrap();
+        let neighbours = triangulation.neighbouring_points(start_edge);
+        assert_eq!(neighbours.len(), 2);
+        // let neighbour_points:Vec<_> = neighbours.iter().map(|edge|triangulation.vertices.get(edge.edge().point).unwrap().point).collect();
+        // {
+        //     let centroids: Vec<_> = triangulation
+        //         .triangles()
+        //         .map(|(a, b, c)| {
+        //             println!("a {} b {} c {}", a.point, b.point, c.point);
+        //             let ax = (a.point.x + b.point.x + c.point.x) / 3.0;
+        //             let ay = (a.point.y + b.point.y + c.point.y) / 3.0;
+        //             Point::new(ax, ay)
+        //         })
+        //         .collect();
+        //     for centroid in centroids {
+        //         println!("adding point: {}", centroid);
+        //         for (i, quad) in triangulation.qeds.quads.iter() {
+        //             println!(
+        //                 "BeforeQuad[{}]: {}-{} {:?}-{:?}",
+        //                 i,
+        //                 triangulation
+        //                     .vertices
+        //                     .get(quad.edges_a[0].point)
+        //                     .unwrap()
+        //                     .point,
+        //                 triangulation
+        //                     .vertices
+        //                     .get(quad.edges_a[1].point)
+        //                     .unwrap()
+        //                     .point,
+        //                 quad.edges_b[0].point,
+        //                 quad.edges_b[1].point
+        //             );
+        //         }
+        //         triangulation.add_point(centroid, (0.0, 0.0), true);
+        //         for (i, quad) in triangulation.qeds.quads.iter() {
+        //             println!(
+        //                 "AfterQuad[{}]: {}-{} {:?}-{:?}",
+        //                 i,
+        //                 triangulation
+        //                     .vertices
+        //                     .get(quad.edges_a[0].point)
+        //                     .unwrap()
+        //                     .point,
+        //                 triangulation
+        //                     .vertices
+        //                     .get(quad.edges_a[1].point)
+        //                     .unwrap()
+        //                     .point,
+        //                 quad.edges_b[0].point,
+        //                 quad.edges_b[1].point
+        //             );
+        //         }
+        //     }
+        // }
+        // assert_eq!(triangulation.qeds.base_edges().count(), 6);
+        // // let p1 = Point::new(4.0, 1.0);
+        // // triangulation.add_point(p1, (0.0, 0.0));
+        // debug_assert_spaces(&triangulation);
+        // assert_eq!(triangulation.triangles().count(), 3);
+    }
+
+    #[test]
+    fn edge_location() {
+        let v1 = Point::new(0.0, 0.0);
+        let v2 = Point::new(5.0, 0.0);
+        let v3 = Point::new(5.0, 5.0);
+        let v4 = Point::new(2.5, 0.0);
+        let v5 = Point::new(3.0, 0.0);
+        let mut triangulation = SurfaceTriangulation::new((v1, 0), (v2, 0), (v3, 0));
+        triangulation.locate(v4);
+        triangulation.add_point(v4, 0, true);
+        //          /// The vector of edges.
+        //     pub edges: Slab<HEdge>,
+        //     /// The vector of vertices.
+        //     pub vertices: Slab<HVertex<VData>>,
+        //     /// The vector of faces.
+        //     pub faces: Slab<HFace>,
+        // }
+        // println!("triangulation: {:?}", triangulation);
+        // for (i, edge) in triangulation.edges.iter() {
+        //     println!("  edge[{}]: {:?}", i, edge);
+        // }
+        // for (i, vertex) in triangulation.vertices.iter() {
+        //     println!("  vertex[{}]: {:?}", i, vertex);
+        // }
+        // for (i, face) in triangulation.faces.iter() {
+        //     println!("  face[{}]: {:?}", i, face);
+        // }
+        eprintln!("Locationg #5");
+        let location = triangulation.locate(v5);
+        eprintln!("edge_location: {:?}", location);
+    }
+
+    #[test]
+    fn edge_location_outside() {
+        let v1 = Point {
+            x: -12.499999999998696,
+            y: 0.000001527352651415037,
+        };
+        let v2 = Point {
+            x: -16.249999999998355,
+            y: 0.000002148013987930656,
+        };
+        let v3 = Point {
+            x: -14.37499999999848,
+            y: -0.9374981413664982,
+        };
+        let v4 = Point::new(-6.875, 0.000001);
+        let mut triangulation = SurfaceTriangulation::new((v1, 0), (v2, 0), (v3, 0));
+        assert!(triangulation.locate(v4).is_none());
+        // triangulation.add_point(v4, 0, true);
     }
 
     //     #[test]
