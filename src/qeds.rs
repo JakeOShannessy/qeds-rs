@@ -674,36 +674,16 @@ pub enum Direction {
 
 /// Does p3 lie to the left or the right (or is collinear) of the line formed by
 /// p1 and p2.
-pub fn left_or_right(
-    Point { x: x1, y: y1 }: Point,
-    Point { x: x2, y: y2 }: Point,
-    Point { x: x3, y: y3 }: Point,
-) -> Direction {
-    // TODO: check for overflow and underflow. If we use f32s we might be able
-    // to rely on the hardware to do it for us, with conversions being cheaper
-    // than branching. Actually we are probably ok with just checking for
-    // infinity at the end.
-    use Direction::*;
-    // TODO: one of thes is better or more robust for small values. We need to
-    // look for consistency.
-    let determinant = x1 * y2 - x1 * y3 + x2 * y3 - x2 * y1 + x3 * y1 - x3 * y2;
-    // let determinant2 = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
-    // eprintln!(
-    //     "determinant for: {:?} {:?} {:?} is {} or {}",
-    //     (x1, y1),
-    //     (x2, y2),
-    //     (x3, y3),
-    //     determinant,
-    //     determinant2,
-    // );
-    if !determinant.is_finite() {
+pub fn left_or_right(pa: Point, pb: Point, pc: Point) -> Direction {
+    let r = robust::orient2d(pa.into(), pb.into(), pc.into());
+    if !r.is_finite() {
         panic!("Non-finite determinant");
-    } else if determinant > 0.0 {
-        Left
-    } else if determinant == 0.0 {
-        Straight
+    } else if r > 0.0 {
+        Direction::Left
+    } else if r == 0.0 {
+        Direction::Straight
     } else {
-        Right
+        Direction::Right
     }
 }
 

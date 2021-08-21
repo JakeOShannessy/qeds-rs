@@ -8,6 +8,7 @@ edition = "2018"
 slab = "0.4"
 rand = "0.8"
 getrandom = { version = "0.2", features = ["js"] }
+robust = "0.2.3"
 
 [dev-dependencies]
 quickcheck = "1"

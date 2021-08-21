@@ -12,7 +12,6 @@ pub struct Point {
     pub x: f64,
     pub y: f64,
 }
-
 impl Point {
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
@@ -132,6 +131,12 @@ impl Sub for Point {
             x: self.x - other.x,
             y: self.y - other.y,
         }
+    }
+}
+
+impl From<Point> for robust::Coord<f64> {
+    fn from(s: Point) -> robust::Coord<f64> {
+        robust::Coord { x: s.x, y: s.y }
     }
 }
 

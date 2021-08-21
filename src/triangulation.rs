@@ -116,61 +116,25 @@ pub enum Lies {
 /// Determine whether a set of 4 points satisfies the Delaunay criterion. This
 /// assumes that the pointes are sorted in a CCW fashion.
 pub fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
-    // TODO: It seems the LU algorithm from nalgebra is better
-    let det = determinant_4x4(
-        a.x,
-        a.y,
-        a.x.powi(2) + a.y.powi(2),
-        1.0,
-        b.x,
-        b.y,
-        b.x.powi(2) + b.y.powi(2),
-        1.0,
-        c.x,
-        c.y,
-        c.x.powi(2) + c.y.powi(2),
-        1.0,
-        d.x,
-        d.y,
-        d.x.powi(2) + d.y.powi(2),
-        1.0,
-    );
-    det > 0.0
-}
-fn determinant_4x4(
-    a: f64,
-    b: f64,
-    c: f64,
-    d: f64,
-    e: f64,
-    f: f64,
-    g: f64,
-    h: f64,
-    i: f64,
-    j: f64,
-    k: f64,
-    l: f64,
-    m: f64,
-    n: f64,
-    o: f64,
-    p: f64,
-) -> f64 {
-    a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
-        + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
-        - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
+    robust::incircle(
+        robust::Coord { x: a.x, y: a.y },
+        robust::Coord { x: b.x, y: b.y },
+        robust::Coord { x: c.x, y: c.y },
+        robust::Coord { x: d.x, y: d.y },
+    ) > 0.0
 }
 
-pub fn is_ccw(p1: Point, p2: Point, p3: Point) -> bool {
-    determinant_3x3(p1.x, p1.y, 1.0, p2.x, p2.y, 1.0, p3.x, p3.y, 1.0) > 0.0
+pub fn cocircular(a: Point, b: Point, c: Point, d: Point) -> bool {
+    robust::incircle(
+        robust::Coord { x: a.x, y: a.y },
+        robust::Coord { x: b.x, y: b.y },
+        robust::Coord { x: c.x, y: c.y },
+        robust::Coord { x: d.x, y: d.y },
+    ) == 0.0
 }
 
-fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
-    a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
-        + c * determinant_2x2(d, e, g, h)
-}
-
-fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
-    a * d - b * c
+pub fn is_ccw(a: Point, b: Point, c: Point) -> bool {
+    robust::orient2d(a.into(), b.into(), c.into()) > 0.0
 }
 
 #[derive(Clone, Debug)]

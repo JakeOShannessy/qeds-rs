@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::point::*;
 use crate::qeds::*;
 use crate::triangulation::del_test_ccw;
@@ -1137,6 +1138,7 @@ impl ConstrainedTriangulation {
             iterations += 1;
         }
     }
+
 
     /// Warning: this is very inefficient and just for testing.
     fn retriangulate_all_single_pass(&mut self) -> usize {
@@ -2557,6 +2559,7 @@ mod tests {
         assert!(has_edge(&triangulation, p1, p2), "missing edge");
     }
 
+    #[ignore]
     #[test]
     fn triangle_triangulation() {
         let mut triangulation = ConstrainedTriangulation::new();
