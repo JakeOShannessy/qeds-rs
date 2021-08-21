@@ -221,7 +221,6 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         point: Point,
         data: T,
     ) -> EdgeTarget {
-        // debug_assert_eq!(0, self.retriangulate_all());
         let first_index = self.qeds.edge_a_ref(edge_target).edge().point;
         let new_index = self.vertices.len();
         self.vertices.push(Segment::new(point, data));
@@ -249,7 +248,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         }
         let e = self.qeds.edge_a_ref(base).oprev().target();
         // this debug fails
-        eprintln!("inserted, pre retriangulate: {}", point);
+        // eprintln!("inserted, pre retriangulate: {}", point);
         debug_assert_spaces(self);
         self.retriangulate_suspect_edges(e, point, first_index);
         debug_assert_eq!(
@@ -260,11 +259,11 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             point
         );
         // self.retriangulate_all();
-        for fail in self.fail_del_test() {
-            eprintln!("{:?} failed del test", fail);
-        }
+        // for fail in self.fail_del_test() {
+        //     eprintln!("{:?} failed del test", fail);
+        // }
         // debug_assert_eq!(0, self.n_fail_del_test());
-        eprintln!("inserted: {}", point);
+        // eprintln!("inserted: {}", point);
         debug_assert_spaces(self);
         base.sym()
     }
@@ -313,6 +312,13 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         point: Point,
         data: T,
     ) -> EdgeTarget {
+        eprintln!("adding to edge");
+        let is_boundary = self.is_boundary(self.qeds.edge_a_ref(edge_target));
+        eprintln!("is boundary: {}", is_boundary);
+        // TODO: remove this hack
+        if is_boundary {
+            return edge_target;
+        }
         let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
         self.qeds.delete(edge_target);
         edge_target = oprev;
@@ -424,7 +430,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 && !self.is_boundary(self.qeds.edge_a_ref(e))
             {
                 // TODO: make sure we don't swap a boundary
-                eprintln!("swapping");
+                // eprintln!("swapping");
                 self.swap(e);
                 // assert!(self.del_test(e)||self.cocircular(e));
                 e = self.qeds.edge_a_ref(t).target();
@@ -1486,25 +1492,25 @@ mod tests {
 
 /// Assert that every node as a component.
 pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
-    println!("Debugging Spokes");
-    for (i, quad) in triangulation.qeds.quads.iter() {
-        println!(
-            "DebugBefore[{}]: {}-{} {:?}-{:?}",
-            i,
-            triangulation
-                .vertices
-                .get(quad.edges_a[0].point)
-                .unwrap()
-                .point,
-            triangulation
-                .vertices
-                .get(quad.edges_a[1].point)
-                .unwrap()
-                .point,
-            quad.edges_b[1].point,
-            quad.edges_b[0].point,
-        );
-    }
+    // println!("Debugging Spokes");
+    // for (i, quad) in triangulation.qeds.quads.iter() {
+    //     println!(
+    //         "DebugBefore[{}]: {}-{} {:?}-{:?}",
+    //         i,
+    //         triangulation
+    //             .vertices
+    //             .get(quad.edges_a[0].point)
+    //             .unwrap()
+    //             .point,
+    //         triangulation
+    //             .vertices
+    //             .get(quad.edges_a[1].point)
+    //             .unwrap()
+    //             .point,
+    //         quad.edges_b[1].point,
+    //         quad.edges_b[0].point,
+    //     );
+    // }
     // Get all B edges.
     let mut b_targets = Vec::new();
     for (i, _quad) in triangulation.qeds.quads.iter() {
@@ -1527,10 +1533,10 @@ pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
     }
     // eprintln!("Checking triangles");
     for triangle in triangulation.triangles() {
-        eprintln!(
-            "{}-{}-{}",
-            triangle.0.point, triangle.1.point, triangle.2.point
-        );
+        // eprintln!(
+        //     "{}-{}-{}",
+        //     triangle.0.point, triangle.1.point, triangle.2.point
+        // );
         let ccw =
             crate::triangulation::is_ccw(triangle.0.point, triangle.1.point, triangle.2.point);
         assert!(ccw);
