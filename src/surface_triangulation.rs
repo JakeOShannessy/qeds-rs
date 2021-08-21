@@ -248,6 +248,9 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             }
         }
         let e = self.qeds.edge_a_ref(base).oprev().target();
+        // this debug fails
+        eprintln!("inserted, pre retriangulate: {}", point);
+        debug_assert_spaces(self);
         self.retriangulate_suspect_edges(e, point, first_index);
         debug_assert_eq!(
             self.vertices
@@ -261,6 +264,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             eprintln!("{:?} failed del test", fail);
         }
         // debug_assert_eq!(0, self.n_fail_del_test());
+        eprintln!("inserted: {}", point);
         debug_assert_spaces(self);
         base.sym()
     }
@@ -274,6 +278,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
     pub fn add_point(&mut self, mut point: Point, data: T) -> Option<EdgeTarget> {
         point.snap();
         self.update_bounds(point);
+        debug_assert_spaces(self);
         // assert_eq!(0, self.retriangulate_all());
         match self.locate(point)? {
             Location::OnPoint(edge) => Some(edge.target()),
@@ -416,7 +421,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
             let e_org = self.vertices.get(e_org_i).unwrap().point;
             if self.lies_right_strict(self.qeds.edge_a_ref(e), t_dest)
                 && del_test_ccw(e_org, t_dest, e_dest, point)
-                && self.is_boundary(self.qeds.edge_a_ref(e))
+                && !self.is_boundary(self.qeds.edge_a_ref(e))
             {
                 // TODO: make sure we don't swap a boundary
                 eprintln!("swapping");
@@ -1479,7 +1484,6 @@ mod tests {
     }
 }
 
-
 /// Assert that every node as a component.
 pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
     println!("Debugging Spokes");
@@ -1527,7 +1531,8 @@ pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
             "{}-{}-{}",
             triangle.0.point, triangle.1.point, triangle.2.point
         );
-        let ccw = crate::triangulation::is_ccw(triangle.0.point, triangle.1.point, triangle.2.point);
+        let ccw =
+            crate::triangulation::is_ccw(triangle.0.point, triangle.1.point, triangle.2.point);
         assert!(ccw);
     }
 }
