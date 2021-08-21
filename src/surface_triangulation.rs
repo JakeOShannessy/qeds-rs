@@ -261,6 +261,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             eprintln!("{:?} failed del test", fail);
         }
         // debug_assert_eq!(0, self.n_fail_del_test());
+        debug_assert_spaces(self);
         base.sym()
     }
     fn connect(&'_ mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, VertexIndex, Space> {
@@ -413,17 +414,6 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 .point;
             let e_org_i = self.qeds.edge_a_ref(e).edge().point;
             let e_org = self.vertices.get(e_org_i).unwrap().point;
-            let ccw = is_ccw(e_org, e_dest, point);
-            // if !ccw {
-            //     eprintln!(
-            //         "left or right {} {} {}: {:?}",
-            //         e_org,
-            //         e_dest,
-            //         point,
-            //         left_or_right(e_org, e_dest, point)
-            //     );
-            //     assert!(ccw);
-            // }
             if self.lies_right_strict(self.qeds.edge_a_ref(e), t_dest)
                 && del_test_ccw(e_org, t_dest, e_dest, point)
                 && self.is_boundary(self.qeds.edge_a_ref(e))
@@ -1536,6 +1526,8 @@ pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
         eprintln!(
             "{}-{}-{}",
             triangle.0.point, triangle.1.point, triangle.2.point
-        )
+        );
+        let ccw = crate::triangulation::is_ccw(triangle.0.point, triangle.1.point, triangle.2.point);
+        assert!(ccw);
     }
 }
