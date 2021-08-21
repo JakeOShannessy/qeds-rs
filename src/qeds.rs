@@ -46,37 +46,37 @@ fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
     // assert_eq!(det, new_det);
     det > 0.0
 }
-fn determinant_4x4(
-    a: f64,
-    b: f64,
-    c: f64,
-    d: f64,
-    e: f64,
-    f: f64,
-    g: f64,
-    h: f64,
-    i: f64,
-    j: f64,
-    k: f64,
-    l: f64,
-    m: f64,
-    n: f64,
-    o: f64,
-    p: f64,
-) -> f64 {
-    a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
-        + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
-        - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
-}
+// fn determinant_4x4(
+//     a: f64,
+//     b: f64,
+//     c: f64,
+//     d: f64,
+//     e: f64,
+//     f: f64,
+//     g: f64,
+//     h: f64,
+//     i: f64,
+//     j: f64,
+//     k: f64,
+//     l: f64,
+//     m: f64,
+//     n: f64,
+//     o: f64,
+//     p: f64,
+// ) -> f64 {
+//     a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
+//         + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
+//         - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
+// }
 
-fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
-    a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
-        + c * determinant_2x2(d, e, g, h)
-}
+// fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
+//     a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
+//         + c * determinant_2x2(d, e, g, h)
+// }
 
-fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
-    a * d - b * c
-}
+// fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
+//     a * d - b * c
+// }
 pub struct BoundaryIter<'a, AData, BData> {
     qeds: &'a Qeds<AData, BData>,
     next_edge: Option<EdgeRefA<'a, AData, BData>>,
@@ -86,7 +86,7 @@ pub struct BoundaryIter<'a, AData, BData> {
 impl<'a, AData, BData> BoundaryIter<'a, AData, BData> {
     pub(crate) fn new(qeds: &'a Qeds<AData, BData>, initial_boundary_edge: EdgeTarget) -> Self {
         Self {
-            qeds: qeds,
+            qeds,
             next_edge: None,
             first_edge_target: initial_boundary_edge,
         }
@@ -106,7 +106,7 @@ impl<'a, AData, BData> Iterator for BoundaryIter<'a, AData, BData> {
             }
         } else {
             // This is the first time that next has been called.
-            let next_edge = unsafe { self.qeds.edge_a_ref(self.first_edge_target) };
+            let next_edge = self.qeds.edge_a_ref(self.first_edge_target);
             self.next_edge = Some(next_edge.r_prev());
             Some(next_edge)
         }
@@ -250,17 +250,15 @@ impl<AData: Clone, BData: Default> Qeds<AData, BData> {
     /// Connect the Org of a with the Dest of b by creating a new edge. TODO: we
     /// need to special case infinite edges.
     pub fn connect(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRefA<AData, BData> {
-        unsafe {
-            // First, make the new edge.
-            // Set the Org of e to the Dest of a
-            let p1 = self.edge_a(edge_a.sym()).point.clone();
-            // Set the Dest of e to the Org of b
-            let p2 = self.edge_a(edge_b).point.clone();
-            let q_target = self.make_edge_with_a(p1, p2).target;
-            self.splice(q_target, self.edge_ref(edge_a).l_next().target);
-            self.splice(q_target.sym(), edge_b);
-            self.edge_a_ref(q_target)
-        }
+        // First, make the new edge.
+        // Set the Org of e to the Dest of a
+        let p1 = self.edge_a(edge_a.sym()).point.clone();
+        // Set the Dest of e to the Org of b
+        let p2 = self.edge_a(edge_b).point.clone();
+        let q_target = self.make_edge_with_a(p1, p2).target;
+        self.splice(q_target, self.edge_ref(edge_a).l_next().target);
+        self.splice(q_target.sym(), edge_b);
+        self.edge_a_ref(q_target)
     }
 }
 
@@ -289,7 +287,7 @@ impl<AData, BData> Qeds<AData, BData> {
         Self { quads: Slab::new() }
     }
 
-    pub unsafe fn edge_a(&self, target: EdgeTarget) -> &Edge<AData> {
+    pub fn edge_a(&self, target: EdgeTarget) -> &Edge<AData> {
         if target.r == 0 || target.r == 2 {
             &self.quads[target.e].edges_a[(target.r / 2) as usize]
         } else {
@@ -297,7 +295,7 @@ impl<AData, BData> Qeds<AData, BData> {
         }
     }
 
-    pub unsafe fn edge_b(&self, target: EdgeTarget) -> &Edge<BData> {
+    pub fn edge_b(&self, target: EdgeTarget) -> &Edge<BData> {
         if target.r == 0 || target.r == 2 {
             unreachable!()
         } else {
@@ -305,28 +303,19 @@ impl<AData, BData> Qeds<AData, BData> {
         }
     }
 
-    pub unsafe fn edge_ref(&self, target: EdgeTarget) -> EdgeRefAny<AData, BData> {
-        EdgeRefAny {
-            qeds: &self,
-            target,
-        }
+    pub fn edge_ref(&self, target: EdgeTarget) -> EdgeRefAny<AData, BData> {
+        EdgeRefAny { qeds: self, target }
     }
 
-    pub unsafe fn edge_a_ref(&self, target: EdgeTarget) -> EdgeRefA<AData, BData> {
-        EdgeRefA {
-            qeds: &self,
-            target,
-        }
+    pub fn edge_a_ref(&self, target: EdgeTarget) -> EdgeRefA<AData, BData> {
+        EdgeRefA { qeds: self, target }
     }
 
-    pub unsafe fn edge_b_ref(&self, target: EdgeTarget) -> EdgeRefB<AData, BData> {
-        EdgeRefB {
-            qeds: &self,
-            target,
-        }
+    pub fn edge_b_ref(&self, target: EdgeTarget) -> EdgeRefB<AData, BData> {
+        EdgeRefB { qeds: self, target }
     }
 
-    pub unsafe fn edge_mut(&mut self, target: EdgeTarget) -> EdgeABMut<AData, BData> {
+    pub fn edge_mut(&mut self, target: EdgeTarget) -> EdgeABMut<AData, BData> {
         if target.r == 0 || target.r == 2 {
             EdgeABMut::A(&mut self.quads[target.e].edges_a[(target.r / 2) as usize])
         } else {
@@ -334,7 +323,7 @@ impl<AData, BData> Qeds<AData, BData> {
         }
     }
 
-    pub unsafe fn edge_a_mut(&mut self, target: EdgeTarget) -> &mut Edge<AData> {
+    pub fn edge_a_mut(&mut self, target: EdgeTarget) -> &mut Edge<AData> {
         if target.r == 0 || target.r == 2 {
             &mut self.quads[target.e].edges_a[(target.r / 2) as usize]
         } else {
@@ -342,7 +331,7 @@ impl<AData, BData> Qeds<AData, BData> {
         }
     }
 
-    pub unsafe fn edge_b_mut(&mut self, target: EdgeTarget) -> &mut Edge<BData> {
+    pub fn edge_b_mut(&mut self, target: EdgeTarget) -> &mut Edge<BData> {
         if target.r == 0 || target.r == 2 {
             unreachable!()
         } else {
@@ -350,7 +339,7 @@ impl<AData, BData> Qeds<AData, BData> {
         }
     }
 
-    pub unsafe fn splice(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) {
+    pub fn splice(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) {
         let alpha = self.edge_ref(edge_a).onext().rot().target;
         let beta = self.edge_ref(edge_b).onext().rot().target;
 
@@ -366,7 +355,7 @@ impl<AData, BData> Qeds<AData, BData> {
         self.edge_mut(beta).set_next(ta);
     }
 
-    pub unsafe fn delete(&mut self, e: EdgeTarget) {
+    pub fn delete(&mut self, e: EdgeTarget) {
         let oprev = self.edge_ref(e).oprev().target();
         self.splice(e, oprev);
         let sym_oprev = self.edge_ref(e).sym().oprev().target();
@@ -380,6 +369,12 @@ impl<AData, BData> Qeds<AData, BData> {
     }
 }
 
+impl<AData, BData> Default for Qeds<AData, BData> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct BaseEdgeIter<'a, AData, BData> {
     qeds: &'a Qeds<AData, BData>,
     quad_iter: slab::Iter<'a, Quad<AData, BData>>,
@@ -388,7 +383,7 @@ pub struct BaseEdgeIter<'a, AData, BData> {
 impl<'a, AData, BData> BaseEdgeIter<'a, AData, BData> {
     fn new(qeds: &'a Qeds<AData, BData>) -> Self {
         Self {
-            qeds: qeds,
+            qeds,
             quad_iter: qeds.quads.iter(),
         }
     }
@@ -398,7 +393,7 @@ impl<'a, AData, BData> Iterator for BaseEdgeIter<'a, AData, BData> {
     type Item = EdgeRefA<'a, AData, BData>;
     fn next(&mut self) -> Option<Self::Item> {
         let quad = self.quad_iter.next()?;
-        unsafe { Some(self.qeds.edge_a_ref(EdgeTarget::new(quad.0, 0, 0))) }
+        Some(self.qeds.edge_a_ref(EdgeTarget::new(quad.0, 0, 0)))
     }
 }
 
@@ -435,7 +430,7 @@ impl<'a, AData, BData> EdgeRefAny<'a, AData, BData> {
         // We know we can use this unsafe because lifetime gurantee that the
         // Qeds data structure has not been modified since this EdgeRef was
         // created.
-        unsafe {
+        {
             if self.target().r % 2 == 0 {
                 EdgeAB::A(self.qeds().edge_a(self.target()))
             } else {
@@ -446,7 +441,7 @@ impl<'a, AData, BData> EdgeRefAny<'a, AData, BData> {
 
     #[inline(always)]
     pub fn offset_r(&self, offset: u8) -> Self {
-        let mut q = self.clone();
+        let mut q = *self;
         let new_target = q.target().offset_r(offset);
         *q.target_mut() = new_target;
         q
@@ -455,7 +450,7 @@ impl<'a, AData, BData> EdgeRefAny<'a, AData, BData> {
     #[inline(always)]
     pub fn onext(&self) -> Self {
         let edge = self.edge();
-        let mut q = self.clone();
+        let mut q = *self;
         *q.target_mut() = edge.next();
         q
     }
@@ -572,6 +567,7 @@ pub fn lies_left(point: Point, pa: Point, pb: Point) -> bool {
     // We have special treatment of infinite edges.
     if !pa.is_finite() && !pb.is_finite() {
         print!(" infinite");
+        #[allow(clippy::if_same_then_else)]
         if pa.x == f64::INFINITY && pb.y == f64::INFINITY {
             // CCW
             println!(" yes");
@@ -637,7 +633,7 @@ impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
         // We know we can use this unsafe because lifetime gurantee that the
         // Qeds data structure has not been modified since this EdgeRef was
         // created.
-        unsafe { self.qeds().edge_a(self.target()) }
+        self.qeds().edge_a(self.target())
     }
     // pub fn edge_mut(&mut self) -> &Edge<AData> {
     //     // We know we can use this unsafe because lifetime gurantee that the
@@ -648,7 +644,7 @@ impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
 
     #[inline(always)]
     pub fn offset_r(&self, offset: u8) -> Self {
-        let mut q = self.clone();
+        let mut q = *self;
         let new_target = q.target().offset_r(offset);
         *q.target_mut() = new_target;
         q
@@ -657,7 +653,7 @@ impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
     #[inline(always)]
     pub fn onext(&self) -> Self {
         let edge = self.edge();
-        let mut q = self.clone();
+        let mut q = *self;
         *q.target_mut() = edge.next;
         q
     }
@@ -779,12 +775,12 @@ impl<'a, AData, BData> EdgeRefB<'a, AData, BData> {
         // We know we can use this unsafe because lifetime gurantee that the
         // Qeds data structure has not been modified since this EdgeRef was
         // created.
-        unsafe { self.qeds().edge_b(self.target()) }
+        self.qeds().edge_b(self.target())
     }
 
     #[inline(always)]
     pub fn offset_r(&self, offset: u8) -> Self {
-        let mut q = self.clone();
+        let mut q = *self;
         let new_target = q.target().offset_r(offset);
         *q.target_mut() = new_target;
         q
@@ -793,7 +789,7 @@ impl<'a, AData, BData> EdgeRefB<'a, AData, BData> {
     #[inline(always)]
     pub fn onext(&self) -> Self {
         let edge = self.edge();
-        let mut q = self.clone();
+        let mut q = *self;
         *q.target_mut() = edge.next;
         q
     }
@@ -943,7 +939,7 @@ impl EdgeTarget {
 
     #[inline(always)]
     fn offset_r(&self, offset: u8) -> Self {
-        let mut q = self.clone();
+        let mut q = *self;
         q.r = (q.r + offset) % 4;
         q
     }
@@ -1195,7 +1191,7 @@ mod tests {
         // Step 2. Add some edges to it.
         let q1 = qeds.make_edge_with_a(point_a, point_b).target;
         println!("q1 Target: {:?}", q1);
-        unsafe {
+        {
             let e = &qeds.quads[0].edges_a[0];
             // e with sym applied 2 times is the same edge as e
             assert_eq!(
@@ -1227,7 +1223,7 @@ mod tests {
     fn d5() {
         let mut qeds = Qeds::new();
         let q1 = qeds.make_edge().target;
-        let q1 = unsafe { qeds.edge_a_ref(q1) };
+        let q1 = { qeds.edge_a_ref(q1) };
         assert_eq!(q1.rot().edge(), &qeds.quads[0].edges_b[0]);
         assert_eq!(q1.sym().edge(), &qeds.quads[0].edges_a[1]);
         assert_eq!(q1.sym().rot().edge(), &qeds.quads[0].edges_b[1]);
@@ -1257,7 +1253,7 @@ mod tests {
         // it is the more useful format for testing.
         let q1 = qeds.make_edge().target;
         let q2 = qeds.make_edge().target;
-        unsafe {
+        {
             qeds.splice(q1.sym(), q2);
             let q1 = qeds.edge_a_ref(q1);
             let q2 = qeds.edge_a_ref(q2);
@@ -1285,7 +1281,7 @@ mod tests {
 
         // Step 3. Splice those edges together so that we actually have
         // something of a network.
-        unsafe {
+        {
             qeds.splice(a.sym(), b);
         }
     }
@@ -1302,7 +1298,7 @@ mod tests {
         let q1 = qeds.make_edge_with_a(p1, p2).target;
         let q2 = qeds.make_edge_with_a(p2, p3).target;
 
-        unsafe {
+        {
             // Step 3. Splice those edges together so that we actually have
             // something of a network.
             qeds.splice(q1.sym(), q2);
@@ -1385,7 +1381,7 @@ mod tests {
 
         // Step 4. Splice those edges together so that we actually have
         // something of a network. This adds the third edge.
-        unsafe {
+        {
             qeds.splice(q1.sym(), q2);
             assert_eq!(qeds.edge_a_ref(q1).sym().onext().target, q2);
             let e = qeds.connect(q2, q1).target();
@@ -1427,7 +1423,7 @@ mod tests {
                 q2.rot().sym()
             );
         }
-        unsafe {
+        {
             // Get the first edge.
             let edge = qeds.edge_a_ref(EdgeTarget::new(0, 0, 0));
 
@@ -1494,8 +1490,8 @@ mod tests {
                 centre.x += p.x;
                 centre.y += p.y;
             }
-            centre.x = centre.x / (n as f64);
-            centre.y = centre.y / (n as f64);
+            centre.x /= n as f64;
+            centre.y /= n as f64;
             assert_eq!(centre, Point::new(2.5, 5.0 / 3.0))
         }
     }

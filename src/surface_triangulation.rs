@@ -25,7 +25,7 @@ pub fn edge_from_target<T: Clone>(
     target: EdgeTarget,
     triangulation: &SurfaceTriangulation<T>,
 ) -> Edge<VertexIndex> {
-    let edge_ref = unsafe { triangulation.qeds.edge_a_ref(target) };
+    let edge_ref = triangulation.qeds.edge_a_ref(target);
     edge_ref.edge().clone()
 }
 
@@ -33,7 +33,7 @@ pub fn triangle_across_from_target<T>(
     target: EdgeTarget,
     triangulation: &SurfaceTriangulation<T>,
 ) -> NodeTarget {
-    let edge_ref = unsafe { triangulation.qeds.edge_a_ref(target) };
+    let edge_ref = triangulation.qeds.edge_a_ref(target);
     let triangle_across = edge_ref.triangle_across();
     NodeTarget(triangle_across.target())
 }
@@ -58,7 +58,7 @@ impl NodeTarget {
     }
 
     pub fn edges<T>(self, triangulation: &SurfaceTriangulation<T>) -> Vec<EdgeTarget> {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self.into()) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self.into());
         edge_ref
             .l_face()
             .edges
@@ -117,7 +117,7 @@ pub struct SurfaceTriangulation<T> {
 }
 
 impl<T> SurfaceTriangulation<T> {
-    fn lies_right<'a>(&self, edge_ref: EdgeRefA<'a, VertexIndex, Space>, point: Point) -> Lies {
+    fn lies_right(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> Lies {
         use Lies::*;
         let pa = self.vertices.get(edge_ref.edge().point).unwrap().point();
         let pb = self
@@ -133,23 +133,23 @@ impl<T> SurfaceTriangulation<T> {
         }
     }
 
-    pub fn lies_right_strict<'a>(
+    pub fn lies_right_strict(
         &self,
-        edge_ref: EdgeRefA<'a, VertexIndex, Space>,
+        edge_ref: EdgeRefA<'_, VertexIndex, Space>,
         point: Point,
     ) -> bool {
         self.lies_right(edge_ref, point) == Lies::Yes
     }
 
-    pub fn lies_right_or_on<'a>(
+    pub fn lies_right_or_on(
         &self,
-        edge_ref: EdgeRefA<'a, VertexIndex, Space>,
+        edge_ref: EdgeRefA<'_, VertexIndex, Space>,
         point: Point,
     ) -> bool {
         self.lies_right(edge_ref, point) != Lies::No
     }
 
-    pub fn lies_left<'a>(&self, edge_ref: EdgeRefA<'a, VertexIndex, Space>, point: Point) -> Lies {
+    pub fn lies_left(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> Lies {
         let pa = self.vertices.get(edge_ref.edge().point).unwrap().point();
         let pb = self
             .vertices
@@ -164,11 +164,7 @@ impl<T> SurfaceTriangulation<T> {
         }
     }
 
-    pub fn in_left_face<'a>(
-        &self,
-        edge_ref: EdgeRefA<'a, VertexIndex, Space>,
-        point: Point,
-    ) -> bool {
+    pub fn in_left_face(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> bool {
         for edge in edge_ref.l_face().edges.iter() {
             let is_left = match self.lies_left(*edge, point) {
                 Lies::No => false,
@@ -182,11 +178,7 @@ impl<T> SurfaceTriangulation<T> {
         true
     }
 
-    pub fn on_left_face<'a>(
-        &self,
-        edge_ref: EdgeRefA<'a, VertexIndex, Space>,
-        point: Point,
-    ) -> bool {
+    pub fn on_left_face(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> bool {
         for edge in edge_ref.l_face().edges.iter() {
             let is_left = match self.lies_left(*edge, point) {
                 Lies::No => false,
@@ -209,7 +201,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         data: T,
         retriangulate: bool,
     ) -> EdgeTarget {
-        unsafe {
+        {
             let first_index = self.qeds.edge_a_ref(edge_target).edge().point;
             let first = self.vertices.get(first_index).unwrap().point;
             let new_index = self.vertices.len();
@@ -237,7 +229,6 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             //         mb.point = bval;
             //     }
             // }
-            let mut t = 0;
             loop {
                 let base_ref = self.connect(edge_target, base.sym());
                 edge_target = base_ref.oprev().target();
@@ -267,7 +258,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             return_value
         }
     }
-    fn connect<'a>(&'a mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'a, VertexIndex, Space> {
+    fn connect(&'_ mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, VertexIndex, Space> {
         let e = self.qeds.connect(a, b).target();
         // let aval = unsafe { self.qeds.edge_a_ref(e).sym().oprev().rot().edge().point };
         // unsafe {
@@ -280,7 +271,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         //     let mb = self.qeds.edge_b_mut(target);
         //     mb.point = bval;
         // }
-        unsafe { self.qeds.edge_a_ref(e) }
+        self.qeds.edge_a_ref(e)
     }
 
     /// This function accounts for the point lying on an existing edge or point.
@@ -291,7 +282,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         data: T,
         retriangulate: bool,
     ) -> EdgeTarget {
-        unsafe {
+        {
             let point_a = self
                 .vertices
                 .get(self.qeds.edge_a_ref(edge_target).edge().point)
@@ -347,18 +338,16 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         data: T,
         retriangulate: bool,
     ) -> EdgeTarget {
-        unsafe {
+        {
             {
                 let oprev_ref = self.qeds.edge_a_ref(edge_target).oprev();
 
                 let oprev = oprev_ref.target();
-                drop(oprev_ref);
 
                 self.qeds.delete(edge_target);
                 edge_target = oprev;
             }
-            let return_value = self.add_to_quad_unchecked(edge_target, point, data, retriangulate);
-            return_value
+            self.add_to_quad_unchecked(edge_target, point, data, retriangulate)
         }
     }
 
@@ -371,7 +360,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         data: T,
         retriangulate: bool,
     ) -> EdgeTarget {
-        unsafe {
+        {
             let point_a = self
                 .vertices
                 .get(self.qeds.edge_a_ref(edge_target).edge().point)
@@ -395,16 +384,11 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
 }
 
 impl<T: Clone> SurfaceTriangulation<T> {
-    /// Create a new surface from a series of points. The points are in 2d, so
-    /// we don't need to worry about them all being co-planar at the moment.
-    pub fn from_points(points: &[Point]) -> Self {
-        todo!()
-    }
     pub fn new(a: (Point, T), b: (Point, T), c: (Point, T)) -> Self {
         assert!(is_ccw(a.0, b.0, c.0));
-        let seg_a = Segment::new(a.0, a.1.clone());
-        let seg_b = Segment::new(b.0, b.1.clone());
-        let seg_c = Segment::new(c.0, c.1.clone());
+        let seg_a = Segment::new(a.0, a.1);
+        let seg_b = Segment::new(b.0, b.1);
+        let seg_c = Segment::new(c.0, c.1);
         let a_index = 0;
         let b_index = 1;
         let c_index = 2;
@@ -419,7 +403,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
         // let edge_c = qeds
         //     .make_edge_with_a(Segment::new(c.0, c.1), Segment::new(a.0, a.1))
         //     .target();
-        let result = unsafe {
+        let result = {
             qeds.splice(edge_a.sym(), edge_b);
             // for (i, quad) in qeds.quads.iter() {
             //     println!("AQuad[{}]: {:?}", i, quad.edges_b);
@@ -437,7 +421,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
         result
     }
 
-    pub unsafe fn swap(&mut self, e: EdgeTarget) {
+    pub fn swap(&mut self, e: EdgeTarget) {
         let a = self.qeds.edge_a_ref(e).oprev().target();
         let b = self.qeds.edge_a_ref(e).sym().oprev().target();
 
@@ -450,17 +434,12 @@ impl<T: Clone> SurfaceTriangulation<T> {
         let b_lnext = self.qeds.edge_a_ref(b).l_next().target();
         self.qeds.splice(e.sym(), b_lnext);
 
-        let a_dest = self.qeds.edge_a_ref(a).sym().edge().point.clone();
-        let b_dest = self.qeds.edge_a_ref(b).sym().edge().point.clone();
+        let a_dest = self.qeds.edge_a_ref(a).sym().edge().point;
+        let b_dest = self.qeds.edge_a_ref(b).sym().edge().point;
         self.qeds.edge_a_mut(e).point = a_dest;
         self.qeds.edge_a_mut(e.sym()).point = b_dest;
     }
-    unsafe fn retriangulate_suspect_edges(
-        &mut self,
-        mut e: EdgeTarget,
-        point: Point,
-        first: Point,
-    ) {
+    fn retriangulate_suspect_edges(&mut self, mut e: EdgeTarget, point: Point, first: Point) {
         // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
         loop {
             let t = self.qeds.edge_a_ref(e).oprev().target();
@@ -499,6 +478,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
     /// Warning: this is very inefficient and just for testing.
     fn retriangulate_all_single_pass(&mut self) -> usize {
         let mut swaps = 0;
+        #[allow(clippy::needless_collect)]
         let edge_targets: Vec<EdgeTarget> =
             self.qeds.base_edges().map(|edge| edge.target()).collect();
         for e in edge_targets.into_iter() {
@@ -517,7 +497,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
     pub fn retriangulate_all(&mut self) -> usize {
         let mut iterations = 0;
         let mut total_swaps = 0;
-        let total_swaps = loop {
+        loop {
             if iterations > 100 {
                 panic!("too many triangulation iterations");
             }
@@ -527,7 +507,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 break total_swaps;
             }
             iterations += 1;
-        };
+        }
         // // TODO: Don't do this, this is a hack
         // unsafe {
         //     if let Some(out_target) = self.get_outside() {
@@ -546,20 +526,16 @@ impl<T: Clone> SurfaceTriangulation<T> {
         //         panic!("no out")
         //     }
         // }
-
-        total_swaps
     }
 
     fn get_outside(&self) -> Option<EdgeTarget> {
-        unsafe {
-            // Find at least one edge with an Out property.
-            for (i, quad) in self.qeds.quads.iter() {
-                if quad.edges_b[0].point == Space::Out {
-                    return Some(EdgeTarget::new(i, 1, 0));
-                }
-                if quad.edges_b[1].point == Space::Out {
-                    return Some(EdgeTarget::new(i, 3, 0));
-                }
+        // Find at least one edge with an Out property.
+        for (i, quad) in self.qeds.quads.iter() {
+            if quad.edges_b[0].point == Space::Out {
+                return Some(EdgeTarget::new(i, 1, 0));
+            }
+            if quad.edges_b[1].point == Space::Out {
+                return Some(EdgeTarget::new(i, 3, 0));
             }
         }
         None
@@ -601,12 +577,11 @@ impl<T: Clone> SurfaceTriangulation<T> {
                     println!("Triangle: {:?}", (a.point, b.point, c.point));
                 }
                 panic!("locating failed for: {}", point);
-                return None;
             }
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
             let onext_first: bool = rng.gen();
-            let segment = self.get_segment(e);
+            // let segment = self.get_segment(e);
             // eprintln!("checking: {:?}", segment);
             if point == self.vertices.get(e.edge().point).unwrap().point {
                 break Some(e);
@@ -693,14 +668,12 @@ impl<'a, T: Clone> Iterator for SegmentsIter<'a, T> {
             let edge = current_quad.edges_a[1].clone();
             self.current_quad = None;
             Some(edge)
+        } else if let Some((_, quad)) = self.slab_iter.next() {
+            let edge = quad.edges_a[0].clone();
+            self.current_quad = Some(quad.clone());
+            Some(edge)
         } else {
-            if let Some((_, quad)) = self.slab_iter.next() {
-                let edge = quad.edges_a[0].clone();
-                self.current_quad = Some(quad.clone());
-                Some(edge)
-            } else {
-                None
-            }
+            None
         }
     }
 }
@@ -759,7 +732,7 @@ impl<T> SurfaceTriangulation<T> {
 
     pub fn some_edge_a(&self) -> Option<EdgeRefA<VertexIndex, Space>> {
         let (i, _) = self.qeds.quads.iter().next()?;
-        unsafe { Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0))) }
+        Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0)))
     }
 
     fn update_bounds(&mut self, point: Point) {
@@ -819,7 +792,7 @@ impl<T> SurfaceTriangulation<T> {
     }
 
     /// Test whether an edge is the diagonal of a concave quad.
-    unsafe fn concave_test(&self, e: EdgeTarget) -> bool {
+    fn concave_test(&self, e: EdgeTarget) -> bool {
         // Get the edge.
         let edge = self.qeds.edge_a_ref(e);
         // Get all of the vertices around this egdge in a CCW order.
@@ -917,8 +890,7 @@ impl<'a, T: Clone> Iterator for IntersectionIter<'a, T> {
                     // through a given triangle. This is indicated by subsequent
                     // "spokes" switching from left to right. If the line passes
                     // through a vertex we can deal with it here.
-                    let initial_start =
-                        unsafe { self.triangulation.qeds.edge_a_ref(intersecting_edge) };
+                    let initial_start = { self.triangulation.qeds.edge_a_ref(intersecting_edge) };
                     let mut spoke = initial_start;
                     // First we loop around until we are on a spoke where b is
                     // to the left.
@@ -1067,7 +1039,7 @@ impl<'a, T: Clone> Iterator for IntersectionIter<'a, T> {
                     //     opposite_edge.edge().point.point(),
                     //     opposite_edge.sym().edge().point.point()
                     // );
-                    return Some(intersection);
+                    Some(intersection)
                 }
                 Intersection::Edge(intersecting_edge) => {
                     // println!(
@@ -1080,12 +1052,12 @@ impl<'a, T: Clone> Iterator for IntersectionIter<'a, T> {
                     //         .point()
                     // );
                     let intersecting_edge =
-                        unsafe { self.triangulation.qeds.edge_a_ref(intersecting_edge) };
+                        { self.triangulation.qeds.edge_a_ref(intersecting_edge) };
                     // Now we iterate through all of the triangles.
                     // If the final point is to the left of the intersecting edge, it is
                     // within the triangle, so we don't include the intersection and can
                     // break.
-                    match left_or_right(
+                    if left_or_right(
                         self.triangulation
                             .vertices
                             .get(intersecting_edge.edge().point)
@@ -1097,11 +1069,9 @@ impl<'a, T: Clone> Iterator for IntersectionIter<'a, T> {
                             .unwrap()
                             .point(),
                         self.b,
-                    ) {
-                        Direction::Left => {
-                            return None;
-                        }
-                        _ => (),
+                    ) == Direction::Left
+                    {
+                        return None;
                     }
                     // intersections.push(Intersection::Edge(intersecting_edge.target()));
                     // To get the same edge on the other triangle, we simply need the
@@ -1119,17 +1089,17 @@ impl<'a, T: Clone> Iterator for IntersectionIter<'a, T> {
                         Direction::Left => {
                             let intersection = Intersection::Edge(e.l_next().l_next().target());
                             self.current_intersection = Some(intersection);
-                            return Some(intersection);
+                            Some(intersection)
                         }
                         Direction::Straight => {
                             let intersection = Intersection::Point(c_edge.target());
                             self.current_intersection = Some(intersection);
-                            return Some(intersection);
+                            Some(intersection)
                         }
                         Direction::Right => {
                             let intersection = Intersection::Edge(e.l_next().target());
                             self.current_intersection = Some(intersection);
-                            return Some(intersection);
+                            Some(intersection)
                         }
                     }
                 }
@@ -1228,8 +1198,7 @@ impl<'a, T: Clone> Iterator for IntersectionIter<'a, T> {
 impl<'a> EdgeRefA<'a, VertexIndex, Space> {
     pub fn triangle_across(&self) -> Self {
         let edge_on_next_tri = self.sym();
-        let canonical_edge = edge_on_next_tri.get_tri_canonical();
-        canonical_edge
+        edge_on_next_tri.get_tri_canonical()
     }
 }
 
@@ -1263,7 +1232,7 @@ impl<'a, T> Iterator for RawTriangleIter<'a, T> {
             // First we check that the edge actually exists for this given
             // EdgeTarget.
             if self.triangulation.qeds.quads.contains(self.next.e) {
-                let edge_ref = unsafe { self.triangulation.qeds.edge_a_ref(self.next) };
+                let edge_ref = { self.triangulation.qeds.edge_a_ref(self.next) };
                 self.inc();
                 if edge_ref.is_tri_canonical() && edge_ref.is_tri_real() {
                     break Some(edge_ref);
@@ -1411,17 +1380,13 @@ impl<'a, T> TriangleEdgeIter<'a, T> {
 }
 
 impl<'a, T: Clone> Iterator for TriangleEdgeIter<'a, T> {
-    type Item = (
-        (EdgeTarget, Segment<T>),
-        (EdgeTarget, Segment<T>),
-        (EdgeTarget, Segment<T>),
-    );
+    type Item = [(EdgeTarget, Segment<T>); 3];
     fn next(&mut self) -> Option<Self::Item> {
         let tri_a = self.raw_triangles.next()?;
         let tri_b = tri_a.l_next();
         let tri_c = tri_b.l_next();
         assert_eq!(tri_c.l_next().target, tri_a.target);
-        Some((
+        Some([
             (
                 tri_a.target,
                 self.raw_triangles
@@ -1449,7 +1414,7 @@ impl<'a, T: Clone> Iterator for TriangleEdgeIter<'a, T> {
                     .unwrap()
                     .clone(),
             ),
-        ))
+        ])
     }
 }
 
@@ -1485,7 +1450,7 @@ impl<'a, T> Iterator for NodeIter<'a, T> {
             // First we check that the edge actually exists for this given
             // EdgeTarget.
             if self.triangulation.qeds.quads.contains(self.next.e) {
-                let edge_ref = unsafe { self.triangulation.qeds.edge_a_ref(self.next) };
+                let edge_ref = { self.triangulation.qeds.edge_a_ref(self.next) };
                 self.inc();
                 let is_tri_canonical: bool = edge_ref.is_tri_canonical();
                 if is_tri_canonical {
@@ -1529,7 +1494,7 @@ impl<'a> EdgeRefA<'a, VertexIndex, Space> {
         let mut current = first;
         loop {
             // TODO: this is very inefficient, fix BData
-            let edge = unsafe { self.qeds.edge_b_ref(current) };
+            let edge = { self.qeds.edge_b_ref(current) };
             if edge.edge().point == Space::Out {
                 return false;
             }
@@ -1642,28 +1607,28 @@ fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
     // assert_eq!(det, new_det);
     det > 0.0
 }
-fn determinant_4x4(
-    a: f64,
-    b: f64,
-    c: f64,
-    d: f64,
-    e: f64,
-    f: f64,
-    g: f64,
-    h: f64,
-    i: f64,
-    j: f64,
-    k: f64,
-    l: f64,
-    m: f64,
-    n: f64,
-    o: f64,
-    p: f64,
-) -> f64 {
-    a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
-        + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
-        - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
-}
+// fn determinant_4x4(
+//     a: f64,
+//     b: f64,
+//     c: f64,
+//     d: f64,
+//     e: f64,
+//     f: f64,
+//     g: f64,
+//     h: f64,
+//     i: f64,
+//     j: f64,
+//     k: f64,
+//     l: f64,
+//     m: f64,
+//     n: f64,
+//     o: f64,
+//     p: f64,
+// ) -> f64 {
+//     a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
+//         + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
+//         - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
+// }
 
 fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
     a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
@@ -1705,15 +1670,13 @@ pub fn get_edge<T>(
         } else {
             continue;
         };
-        return Some(unsafe { triangulation.qeds().unwrap().edge_a_ref(edge_target) });
+        return Some(triangulation.qeds().unwrap().edge_a_ref(edge_target));
     }
     None
 }
 
 #[cfg(test)]
 mod tests {
-    use core::panic;
-
     use super::*;
 
     #[test]
@@ -1794,10 +1757,10 @@ mod tests {
         debug_assert_spaces(&triangulation);
         {
             let mut line_midpoints = Vec::with_capacity(triangulation.qeds.quads.len() * 3);
-            for (a, b, c) in
+            for (a, _b, _c) in
                 triangulation
                     .triangle_edges()
-                    .map(|((ta, edge_a), (tb, edge_b), (tc, edge_c))| {
+                    .map(|[(ta, edge_a), (tb, edge_b), (tc, edge_c)]| {
                         let ax = (edge_a.point.x + edge_b.point.x) / 2.0;
                         let ay = (edge_a.point.y + edge_b.point.y) / 2.0;
 
@@ -1830,7 +1793,7 @@ mod tests {
             let point = *midpoint;
             let n1 = triangulation.triangle_edges().count();
             // let e = triangulation.add_point_to_edge(edge_target, midpoint, (0.0, 0.0));
-            unsafe {
+            {
                 let oprev = triangulation.qeds.edge_a_ref(edge_target).oprev().target();
                 // drop(oprev_ref);
 
@@ -1924,7 +1887,7 @@ mod tests {
         let v1 = Point::new(0.0, 0.0);
         let v2 = Point::new(5.0, 0.0);
         let v3 = Point::new(5.0, 5.0);
-        let mut triangulation = SurfaceTriangulation::new((v1, 0.0), (v2, 0.0), (v3, 0.0));
+        let triangulation = SurfaceTriangulation::new((v1, 0.0), (v2, 0.0), (v3, 0.0));
         assert_eq!(triangulation.triangles().count(), 1);
         debug_assert_spaces(&triangulation);
         let start_edge = triangulation.some_edge_a().unwrap();
@@ -2036,7 +1999,7 @@ mod tests {
             y: -0.9374981413664982,
         };
         let v4 = Point::new(-6.875, 0.000001);
-        let mut triangulation = SurfaceTriangulation::new((v1, 0), (v2, 0), (v3, 0));
+        let triangulation = SurfaceTriangulation::new((v1, 0), (v2, 0), (v3, 0));
         assert!(triangulation.locate(v4).is_none());
         // triangulation.add_point(v4, 0, true);
     }
@@ -3105,12 +3068,12 @@ pub fn debug_assert_spaces<T>(triangulation: &SurfaceTriangulation<T>) {
     }
     // Get all B edges.
     let mut b_targets = Vec::new();
-    for (i, quad) in triangulation.qeds.quads.iter() {
+    for (i, _quad) in triangulation.qeds.quads.iter() {
         b_targets.push(EdgeTarget::new(i, 1, 0));
         b_targets.push(EdgeTarget::new(i, 3, 0));
     }
     for b_target in b_targets {
-        let mut current = unsafe { triangulation.qeds.edge_b_ref(b_target) };
+        let mut current = triangulation.qeds.edge_b_ref(b_target);
         let first = current.target();
         let space = current.edge().point;
         loop {

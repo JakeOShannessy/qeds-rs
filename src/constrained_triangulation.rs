@@ -64,7 +64,7 @@ impl L3NodeTarget {
         nodes
     }
 
-    pub fn corridor<'a>(self, full_map: &'a FullMap, edge_number: u8) -> CorridorIter<'a> {
+    pub fn corridor(self, full_map: &FullMap, edge_number: u8) -> CorridorIter<'_> {
         let node: NodeTarget = self.into();
         let edge = node.get_edge(&full_map.triangulation, edge_number);
         let next = edge.triangle_across(&full_map.triangulation);
@@ -176,7 +176,7 @@ impl NodeTarget {
     }
 
     pub fn edges(self, triangulation: &ConstrainedTriangulation) -> Vec<EdgeTarget> {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self.into()) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self.into());
         edge_ref
             .l_face()
             .edges
@@ -199,7 +199,7 @@ impl NodeTarget {
     }
 
     pub fn n_constrained_edges(self, triangulation: &ConstrainedTriangulation) -> usize {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self.into()) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self.into());
         edge_ref.n_constrained_edges()
     }
 
@@ -211,7 +211,7 @@ impl NodeTarget {
         tri_info: &HashMap<NodeTarget, TriInfo>,
         level: Level,
     ) -> usize {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self.into()) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self.into());
         edge_ref.num_adjacent_level(tri_info, level)
     }
 }
@@ -284,7 +284,7 @@ impl L3Path {
         if node == self.start_node {
             return true;
         }
-        self.path.iter().find(|(_, x)| *x == node).is_some()
+        self.path.iter().any(|(_, x)| *x == node)
     }
 
     pub fn push(&mut self, path_element: (u8, L3NodeTarget)) {
@@ -380,7 +380,7 @@ impl<'a> CorridorIter<'a> {
                 let tri_across_info = full_map
                     .classification
                     .get(&tri_across)
-                    .expect(&format!("could not get tri_info for {:?}", tri_across));
+                    .unwrap_or_else(|| panic!("could not get tri_info for {:?}", tri_across));
                 let is_l1_across = tri_across_info.level.as_level() == Level::L1;
                 // We want to ignore any adges that are constraints or that have
                 // an L1 node across them.
@@ -438,7 +438,7 @@ impl<'a> Iterator for CorridorIter<'a> {
                         let edge = e.edge(&self.full_map.triangulation);
                         !edge.point.constraint
                         // The triangle across is not the triangle we just visited.
-                        && tri_across != current.into()
+                        && tri_across != current
                         // There is not an L1 (or unknown) node across the edge. (TODO: check that this is performed correctly)
                         && self.full_map.classification
                             .get(&tri_across)
@@ -507,6 +507,12 @@ impl FullMap {
     }
 }
 
+impl Default for FullMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
 pub struct ConstrainedTriangulation {
@@ -533,21 +539,19 @@ impl ConstrainedTriangulation {
         let north = qeds
             .make_edge_with_a(Segment::new_constraint(ne), Segment::new_constraint(nw))
             .target();
-        unsafe {
-            qeds.splice(east, south.sym());
-            let centre = qeds.connect(east, south).target();
-            qeds.edge_a_mut(centre).point.constraint = false;
-            qeds.edge_a_mut(centre.sym()).point.constraint = false;
+        qeds.splice(east, south.sym());
+        let centre = qeds.connect(east, south).target();
+        qeds.edge_a_mut(centre).point.constraint = false;
+        qeds.edge_a_mut(centre.sym()).point.constraint = false;
 
-            qeds.splice(north, east.sym());
-            let west = qeds.connect(north, centre.sym()).target();
-            qeds.edge_a_mut(west).point.constraint = true;
-            qeds.edge_a_mut(west.sym()).point.constraint = true;
-            ConstrainedTriangulation {
-                qeds,
-                boundary_edge: south,
-                bounds: None,
-            }
+        qeds.splice(north, east.sym());
+        let west = qeds.connect(north, centre.sym()).target();
+        qeds.edge_a_mut(west).point.constraint = true;
+        qeds.edge_a_mut(west.sym()).point.constraint = true;
+        ConstrainedTriangulation {
+            qeds,
+            boundary_edge: south,
+            bounds: None,
         }
     }
 
@@ -564,7 +568,7 @@ impl ConstrainedTriangulation {
 
     pub fn some_edge_a(&self) -> Option<EdgeRefA<Segment, ()>> {
         let (i, _) = self.qeds.quads.iter().next()?;
-        unsafe { Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0))) }
+        Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0)))
     }
 
     // TODO: This has not yet been proved to be stable. It may also loop
@@ -591,6 +595,7 @@ impl ConstrainedTriangulation {
             } else if e.lies_right_strict(point) {
                 e = e.sym();
             } else {
+                #[allow(clippy::collapsible_else_if)]
                 if onext_first {
                     if !e.onext().lies_right_strict(point) {
                         e = e.onext();
@@ -664,12 +669,11 @@ impl ConstrainedTriangulation {
 
     fn find_next_constraint_intersection(&self, a: Point, b: Point) -> Option<Intersection> {
         IntersectionIter::new(self, a, b)
-            .filter(|intersection| intersection.is_constraint_or_point(self))
-            .next()
+            .find(|intersection| intersection.is_constraint_or_point(self))
     }
 
     pub fn add_constraint(&mut self, mut pa: Point, mut pb: Point) -> Option<()> {
-        let mut pa_edge = unsafe {
+        {
             pb = {
                 let pb_edge = self.add_point(pb)?;
                 self.qeds.edge_a_ref(pb_edge).edge().point.point()
@@ -740,8 +744,8 @@ impl ConstrainedTriangulation {
                             // );
                             let edge_data = edge_target.edge(self);
                             let edge_sym_data = edge_target.sym().edge(self);
-                            let ex = unsafe { self.qeds.edge_a_ref(edge_target) };
-                            let ex_sym = unsafe { self.qeds.edge_a_ref(edge_target) }.sym();
+                            let ex = self.qeds.edge_a_ref(edge_target);
+                            let ex_sym = self.qeds.edge_a_ref(edge_target).sym();
                             let e = ex.edge();
                             let e_sym = ex_sym.edge();
                             if !edge_data.point.constraint {
@@ -771,9 +775,8 @@ impl ConstrainedTriangulation {
                                 // assert_eq!(px, unsafe{self.qeds.edge_a_ref(px_edge).edge().point.point()});
                                 // inserted_edge_target is an edge leading away from
                                 // the inserted target (which will become px).
-                                let (inserted_point, inserted_edge_target) = unsafe {
+                                let (inserted_point, inserted_edge_target) = {
                                     // Major changes occur here, pa_edge could even be deleted.
-                                    drop(e);
                                     let target =
                                         self.add_point_to_edge(edge_target, intersection_point);
                                     let inserted_point =
@@ -825,7 +828,7 @@ impl ConstrainedTriangulation {
                         }
                     })
                     .collect();
-                if intersecting_soft.len() == 0 {
+                if intersecting_soft.is_empty() {
                     break;
                 }
                 let mut i = 0;
@@ -839,15 +842,15 @@ impl ConstrainedTriangulation {
                     } else {
                         iter_count_swap_inner += 1;
                     }
-                    if intersecting_soft.len() == 0 {
+                    if intersecting_soft.is_empty() {
                         break;
                     }
                     if i >= intersecting_soft.len() {
                         break;
                     }
                     let edge = intersecting_soft[i];
-                    if unsafe { self.concave_test(edge) } {
-                        unsafe { self.swap(edge) };
+                    if self.concave_test(edge) {
+                        self.swap(edge);
                         intersecting_soft.swap_remove(i);
                         i = 0;
                     } else {
@@ -876,7 +879,7 @@ impl ConstrainedTriangulation {
             // rotate around and add the constraint.
             // println!("edges aligned, adding constraint from {} to {}", pa, px);
 
-            unsafe {
+            {
                 debug_assert_eq!(px, px_edge.edge(self).point.point());
                 let mut edge = px_edge;
                 let initial_edge = edge;
@@ -913,7 +916,7 @@ impl ConstrainedTriangulation {
 
     fn connect(&mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<Segment, ()> {
         let e = self.qeds.connect(a, b).target();
-        unsafe {
+        {
             self.qeds.edge_a_mut(e).point.constraint = false;
             self.qeds.edge_a_mut(e.sym()).point.constraint = false;
             self.qeds.edge_a_ref(e)
@@ -922,7 +925,7 @@ impl ConstrainedTriangulation {
 
     /// This function accounts for the point lying on an existing edge or point.
     fn add_to_l_face(&mut self, edge_target: EdgeTarget, point: Point) -> EdgeTarget {
-        unsafe {
+        {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
             if point_a == point {
@@ -946,7 +949,7 @@ impl ConstrainedTriangulation {
     /// Add a point to a specified edge. If the point lies on one of the
     /// vertices just add it there.
     fn add_point_to_edge(&mut self, edge_target: EdgeTarget, point: Point) -> EdgeTarget {
-        unsafe {
+        {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
 
@@ -968,7 +971,7 @@ impl ConstrainedTriangulation {
         mut edge_target: EdgeTarget,
         point: Point,
     ) -> EdgeTarget {
-        unsafe {
+        {
             let point_a = self.qeds.edge_a_ref(edge_target).edge().point.point;
             let point_b = self.qeds.edge_a_ref(edge_target).sym().edge().point.point;
 
@@ -978,8 +981,6 @@ impl ConstrainedTriangulation {
                 // that we can reinstate it.
                 let oprev_ref = self.qeds.edge_a_ref(edge_target).oprev();
                 let oprev = oprev_ref.target();
-                drop(oprev_ref);
-
                 self.qeds.delete(edge_target);
                 edge_target = oprev;
             }
@@ -1061,8 +1062,8 @@ impl ConstrainedTriangulation {
             // TODO: we need to be cautious of infinite loops now that we're constrained.
             if self.qeds.edge_a_ref(e).lies_right_strict(t_dest)
                 && del_test_ccw(e_org, t_dest, e_dest, point)
-                && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
-                && (self.qeds.edge_a_ref(e).sym().edge().point.constraint == false)
+                && !self.qeds.edge_a_ref(e).edge().point.constraint
+                && !self.qeds.edge_a_ref(e).sym().edge().point.constraint
                 && self.concave_test(e)
             {
                 self.swap(e);
@@ -1082,7 +1083,7 @@ impl ConstrainedTriangulation {
 
     /// Determine whether an Edge (i.e. two NavTris) satisfies the Delaunay
     /// criterion. An edge with only a single NavTri will return True.
-    unsafe fn del_test(&self, e: EdgeTarget) -> bool {
+    fn del_test(&self, e: EdgeTarget) -> bool {
         // Get the edge.
         let edge = self.qeds.edge_a_ref(e);
         // Get all of the vertices around this egdge in a CCW order.
@@ -1094,7 +1095,7 @@ impl ConstrainedTriangulation {
     }
 
     /// Test whether an edge is the diagonal of a concave quad.
-    unsafe fn concave_test(&self, e: EdgeTarget) -> bool {
+    fn concave_test(&self, e: EdgeTarget) -> bool {
         // Get the edge.
         let edge = self.qeds.edge_a_ref(e);
         // Get all of the vertices around this egdge in a CCW order.
@@ -1138,12 +1139,13 @@ impl ConstrainedTriangulation {
     /// Warning: this is very inefficient and just for testing.
     fn retriangulate_all_single_pass(&mut self) -> usize {
         let mut swaps = 0;
+        #[allow(clippy::needless_collect)]
         let edge_targets: Vec<EdgeTarget> =
             self.qeds.base_edges().map(|edge| edge.target()).collect();
         for e in edge_targets.into_iter() {
-            unsafe {
+            {
                 if self.del_test(e)
-                    && (self.qeds.edge_a_ref(e).edge().point.constraint == false)
+                    && !self.qeds.edge_a_ref(e).edge().point.constraint
                     && self.concave_test(e)
                 {
                     swaps += 1;
@@ -1154,7 +1156,7 @@ impl ConstrainedTriangulation {
         swaps
     }
 
-    pub unsafe fn swap(&mut self, e: EdgeTarget) {
+    pub fn swap(&mut self, e: EdgeTarget) {
         let a_is_constrained = self.qeds.edge_a_ref(e).edge().point.constraint;
         let b_is_constrained = self.qeds.edge_a_ref(e).sym().edge().point.constraint;
         let a = self.qeds.edge_a_ref(e).oprev().target();
@@ -1200,7 +1202,7 @@ impl ConstrainedTriangulation {
         for triangle in queue.iter() {
             let n = triangle.n_constrained_edges(self);
             let m = triangle.num_adjacent_level(self, &tri_info, Level::L1);
-            let this_tri_info = tri_info.get(&triangle);
+            let this_tri_info = tri_info.get(triangle);
             if n + m == 0 && this_tri_info.is_none() {
                 self.abstract_3(&mut tri_info, *triangle, &mut component);
                 component = NonZeroUsize::new(component.get() + 1).unwrap();
@@ -1239,10 +1241,8 @@ impl ConstrainedTriangulation {
                                     triangle_temp,
                                 );
                             }
-                        } else {
-                            if tri_info.get(&triangle_temp).is_none() {
-                                triangle_next = Some(triangle_temp);
-                            }
+                        } else if tri_info.get(&triangle_temp).is_none() {
+                            triangle_next = Some(triangle_temp);
                         }
                     }
                     triangle_current = triangle_next;
@@ -1269,10 +1269,7 @@ impl ConstrainedTriangulation {
             .map(|info| info.level.as_level() == Level::L1)
             .unwrap_or(false));
         let component = tri_info.get(&r).unwrap().component.unwrap();
-        let mut s = Vec::new();
-        s.push(t);
-        let mut a = Vec::new();
-        a.push(0);
+        let mut s = vec![t];
         while let Some(triangle_current) = s.pop() {
             {
                 let tri_info_mut = tri_info.get_mut(&triangle_current).unwrap();
@@ -1286,7 +1283,7 @@ impl ConstrainedTriangulation {
                 }
             }
             for edge in triangle_current.edges(self) {
-                let edge_ref = unsafe { self.qeds.edge_a_ref(edge) };
+                let edge_ref = { self.qeds.edge_a_ref(edge) };
                 let edge_data = edge.edge(self);
                 let triangle_last = edge.triangle_across(self);
                 if edge_data.point.constraint {
@@ -1298,11 +1295,11 @@ impl ConstrainedTriangulation {
                     .is_none()
                     && !edge_data.point.constraint
                 {
-                    if triangle_last == r {
-                        // TODO
-                    } else {
-                        // TODO
-                    }
+                    // if triangle_last == r {
+                    //     // TODO
+                    // } else {
+                    //     // TODO
+                    // }
                     // TODO: surely we should only be pushing those with no
                     // constraint as an edge.
                     let e_right = edge_ref.l_next().target();
@@ -1344,14 +1341,14 @@ impl ConstrainedTriangulation {
                     //         panic!("incorrect level, should only be considering L1 triangles")
                     //     }
                     // }
-                    if let Some(_this_tri_info) = tri_info.get(&triangle_last) {
-                    } else {
-                    }
-                    if edge_data.point.constraint {
-                        // TODO
-                    } else {
-                        // TODO
-                    }
+                    // if let Some(_this_tri_info) = tri_info.get(&triangle_last) {
+                    // } else {
+                    // }
+                    // if edge_data.point.constraint {
+                    //     // TODO
+                    // } else {
+                    //     // TODO
+                    // }
                 }
             }
         }
@@ -1374,10 +1371,7 @@ impl ConstrainedTriangulation {
             .unwrap_or(false));
         debug_assert!(r.adjacent_tris(self).contains(&t));
         let component = tri_info.get(&r).unwrap().component.unwrap();
-        let mut s = Vec::new();
-        s.push(t);
-        let mut a = Vec::new();
-        a.push(0);
+        let mut s = vec![t];
         while let Some(triangle_current) = s.pop() {
             {
                 // Get a mutable reference to the tri_info for the current
@@ -1433,8 +1427,7 @@ impl ConstrainedTriangulation {
                     let next_triangle = {
                         let connected_edge = edge.sym();
                         // Find the canonical edge of this triangle.
-                        let canonical_edge = connected_edge.get_tri_canonical(self);
-                        canonical_edge
+                        connected_edge.get_tri_canonical(self)
                     };
                     let next_tri_info = tri_info.get(&next_triangle);
                     let next_tri_component = next_tri_info.and_then(|x| x.component);
@@ -1600,7 +1593,7 @@ impl ConstrainedTriangulation {
                 // looking at. [`triangle_last`] is the previous L2 node or the
                 // L3 node in the case of the first iteration.
                 let mut triangle_current: Option<NodeTarget> = Some(edge.triangle_across(self));
-                let mut triangle_last = triangle_base.clone();
+                let mut triangle_last = triangle_base;
                 loop {
                     let mut triangle_next: Option<NodeTarget> = None;
                     let n = triangle_current.unwrap().n_constrained_edges(self);
@@ -1783,6 +1776,12 @@ impl ConstrainedTriangulation {
     }
 }
 
+impl Default for ConstrainedTriangulation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct IntersectionIter<'a> {
     triangulation: &'a ConstrainedTriangulation,
@@ -1830,8 +1829,7 @@ impl<'a> Iterator for IntersectionIter<'a> {
                     // through a given triangle. This is indicated by subsequent
                     // "spokes" switching from left to right. If the line passes
                     // through a vertex we can deal with it here.
-                    let initial_start =
-                        unsafe { self.triangulation.qeds.edge_a_ref(intersecting_edge) };
+                    let initial_start = self.triangulation.qeds.edge_a_ref(intersecting_edge);
                     let mut spoke = initial_start;
                     // First we loop around until we are on a spoke where b is
                     // to the left.
@@ -1944,7 +1942,7 @@ impl<'a> Iterator for IntersectionIter<'a> {
                     //     opposite_edge.edge().point.point(),
                     //     opposite_edge.sym().edge().point.point()
                     // );
-                    return Some(intersection);
+                    Some(intersection)
                 }
                 Intersection::Edge(intersecting_edge) => {
                     // println!(
@@ -1956,21 +1954,18 @@ impl<'a> Iterator for IntersectionIter<'a> {
                     //         .point
                     //         .point()
                     // );
-                    let intersecting_edge =
-                        unsafe { self.triangulation.qeds.edge_a_ref(intersecting_edge) };
+                    let intersecting_edge = self.triangulation.qeds.edge_a_ref(intersecting_edge);
                     // Now we iterate through all of the triangles.
                     // If the final point is to the left of the intersecting edge, it is
                     // within the triangle, so we don't include the intersection and can
                     // break.
-                    match left_or_right(
+                    if left_or_right(
                         intersecting_edge.edge().point.point(),
                         intersecting_edge.sym().edge().point.point(),
                         self.b,
-                    ) {
-                        Direction::Left => {
-                            return None;
-                        }
-                        _ => (),
+                    ) == Direction::Left
+                    {
+                        return None;
                     }
                     // intersections.push(Intersection::Edge(intersecting_edge.target()));
                     // To get the same edge on the other triangle, we simply need the
@@ -1983,17 +1978,17 @@ impl<'a> Iterator for IntersectionIter<'a> {
                         Direction::Left => {
                             let intersection = Intersection::Edge(e.l_next().l_next().target());
                             self.current_intersection = Some(intersection);
-                            return Some(intersection);
+                            Some(intersection)
                         }
                         Direction::Straight => {
                             let intersection = Intersection::Point(c_edge.target());
                             self.current_intersection = Some(intersection);
-                            return Some(intersection);
+                            Some(intersection)
                         }
                         Direction::Right => {
                             let intersection = Intersection::Edge(e.l_next().target());
                             self.current_intersection = Some(intersection);
-                            return Some(intersection);
+                            Some(intersection)
                         }
                     }
                 }
@@ -2091,11 +2086,16 @@ impl LinkageMap {
     }
 }
 
+impl Default for LinkageMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> EdgeRefA<'a, Segment, ()> {
     pub fn triangle_across(&self) -> Self {
         let edge_on_next_tri = self.sym();
-        let canonical_edge = edge_on_next_tri.get_tri_canonical();
-        canonical_edge
+        edge_on_next_tri.get_tri_canonical()
     }
     fn n_constrained_edges(&self) -> usize {
         let initial_edge = *self;
@@ -2270,7 +2270,7 @@ impl<'a> Iterator for TriangleIter<'a> {
             // First we check that the edge actually exists for this given
             // EdgeTarget.
             if self.triangulation.qeds.quads.contains(self.next.e) {
-                let edge_ref = unsafe { self.triangulation.qeds.edge_a_ref(self.next) };
+                let edge_ref = self.triangulation.qeds.edge_a_ref(self.next);
                 self.inc();
                 let is_tri_canonical: bool = edge_ref.is_tri_canonical();
                 if is_tri_canonical {
@@ -2318,7 +2318,7 @@ impl<'a> Iterator for NodeIter<'a> {
             // First we check that the edge actually exists for this given
             // EdgeTarget.
             if self.triangulation.qeds.quads.contains(self.next.e) {
-                let edge_ref = unsafe { self.triangulation.qeds.edge_a_ref(self.next) };
+                let edge_ref = self.triangulation.qeds.edge_a_ref(self.next);
                 self.inc();
                 let is_tri_canonical: bool = edge_ref.is_tri_canonical();
                 if is_tri_canonical {
@@ -2373,29 +2373,29 @@ impl EdgeTarget {
     /// An edge is the canonical edge for a tri iff it has the lowest e value
     /// for the tri.
     fn is_tri_canonical(self, triangulation: &ConstrainedTriangulation) -> bool {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self);
         edge_ref.is_tri_canonical()
     }
 
     fn is_tri_real(self, triangulation: &ConstrainedTriangulation) -> bool {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self);
         edge_ref.is_tri_real()
     }
 
     pub fn get_tri_canonical(self, triangulation: &ConstrainedTriangulation) -> NodeTarget {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self);
         let canonical_edge = edge_ref.get_tri_canonical();
         NodeTarget(canonical_edge.target())
     }
 
     pub fn triangle_across(self, triangulation: &ConstrainedTriangulation) -> NodeTarget {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self);
         let triangle_across = edge_ref.triangle_across();
         NodeTarget(triangle_across.target())
     }
 
     pub fn edge(self, triangulation: &ConstrainedTriangulation) -> Edge<Segment> {
-        let edge_ref = unsafe { triangulation.qeds.edge_a_ref(self) };
+        let edge_ref = triangulation.qeds.edge_a_ref(self);
         edge_ref.edge().clone()
     }
 }
@@ -2454,37 +2454,37 @@ fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
     // assert_eq!(det, new_det);
     det > 0.0
 }
-fn determinant_4x4(
-    a: f64,
-    b: f64,
-    c: f64,
-    d: f64,
-    e: f64,
-    f: f64,
-    g: f64,
-    h: f64,
-    i: f64,
-    j: f64,
-    k: f64,
-    l: f64,
-    m: f64,
-    n: f64,
-    o: f64,
-    p: f64,
-) -> f64 {
-    a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
-        + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
-        - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
-}
+// fn determinant_4x4(
+//     a: f64,
+//     b: f64,
+//     c: f64,
+//     d: f64,
+//     e: f64,
+//     f: f64,
+//     g: f64,
+//     h: f64,
+//     i: f64,
+//     j: f64,
+//     k: f64,
+//     l: f64,
+//     m: f64,
+//     n: f64,
+//     o: f64,
+//     p: f64,
+// ) -> f64 {
+//     a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
+//         + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
+//         - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
+// }
 
-fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
-    a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
-        + c * determinant_2x2(d, e, g, h)
-}
+// fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
+//     a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
+//         + c * determinant_2x2(d, e, g, h)
+// }
 
-fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
-    a * d - b * c
-}
+// fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
+//     a * d - b * c
+// }
 
 pub fn has_edge(triangulation: &ConstrainedTriangulation, pa: Point, pb: Point) -> bool {
     get_edge(triangulation, pa, pb).is_some()
@@ -2513,7 +2513,7 @@ pub fn get_edge(
         } else {
             continue;
         };
-        return Some(unsafe { triangulation.qeds().unwrap().edge_a_ref(edge_target) });
+        return Some(triangulation.qeds().unwrap().edge_a_ref(edge_target));
     }
     None
 }
@@ -2547,8 +2547,8 @@ mod tests {
     #[test]
     fn empty_triangulation() {
         let triangulation = ConstrainedTriangulation::new();
-        let tris: Vec<EdgeRefA<Segment, ()>> = triangulation.triangles().collect();
-        assert_eq!(tris.len(), 2);
+        let tris = triangulation.triangles();
+        assert_eq!(tris.count(), 2);
         let tri_info = triangulation.classify_triangles();
         for (target, info) in tri_info.0 {
             println!("EdgeTarget: {:?} Info: {:?}", target, info);
@@ -2559,7 +2559,7 @@ mod tests {
     fn one_point_triangulation_location() {
         let mut triangulation = ConstrainedTriangulation::new();
         // assert_eq!(triangulation.qeds().unwrap().quads.len(), 5);
-        let south = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(0, 2, 0)) };
+        let south = { triangulation.qeds.edge_a_ref(EdgeTarget::new(0, 2, 0)) };
         assert_eq!(
             south.edge().point.point,
             Point::new(SafeFloat::MIN.0, SafeFloat::MIN.0)
@@ -2579,7 +2579,7 @@ mod tests {
             EdgeTarget::new(4, 0, 0)
         );
 
-        let east = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(1, 0, 0)) };
+        let east = { triangulation.qeds.edge_a_ref(EdgeTarget::new(1, 0, 0)) };
         assert_eq!(
             east.edge().point.point,
             Point::new(SafeFloat::MAX.0, SafeFloat::MIN.0)
@@ -2589,7 +2589,7 @@ mod tests {
             Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0)
         );
 
-        let centre = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(3, 0, 0)) };
+        let centre = { triangulation.qeds.edge_a_ref(EdgeTarget::new(3, 0, 0)) };
         assert_eq!(
             centre.edge().point.point,
             Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0)
@@ -2599,7 +2599,7 @@ mod tests {
             Point::new(SafeFloat::MIN.0, SafeFloat::MIN.0)
         );
 
-        let north = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(2, 0, 0)) };
+        let north = { triangulation.qeds.edge_a_ref(EdgeTarget::new(2, 0, 0)) };
         assert_eq!(
             north.edge().point.point,
             Point::new(SafeFloat::MAX.0, SafeFloat::MAX.0)
@@ -2609,7 +2609,7 @@ mod tests {
             Point::new(SafeFloat::MIN.0, SafeFloat::MAX.0)
         );
 
-        let west = unsafe { triangulation.qeds.edge_a_ref(EdgeTarget::new(4, 0, 0)) };
+        let west = { triangulation.qeds.edge_a_ref(EdgeTarget::new(4, 0, 0)) };
         assert_eq!(
             west.edge().point.point,
             Point::new(SafeFloat::MIN.0, SafeFloat::MAX.0)
@@ -2827,7 +2827,7 @@ mod tests {
         for (i, _quad) in triangulation.qeds().unwrap().quads.iter() {
             let target1 = EdgeTarget::new(i, 0, 0);
             let target2 = EdgeTarget::new(i, 2, 0);
-            unsafe {
+            {
                 assert_ne!(
                     triangulation
                         .qeds()
@@ -3384,8 +3384,7 @@ mod tests {
                 .collect();
             println!("intersections: {:?}", intersections);
             assert_eq!(intersections.len(), 1);
-            let first_intersection =
-                unsafe { triangulation.qeds.edge_a_ref(intersections[0].target()) };
+            let first_intersection = { triangulation.qeds.edge_a_ref(intersections[0].target()) };
             // The edges found have a specified direction.
             assert_eq!(
                 (
@@ -3400,7 +3399,7 @@ mod tests {
             let intersections = triangulation
                 .find_intersections_between_points(Point::new(2.0, 2.0), Point::new(18.0, 6.0));
             assert_eq!(intersections.clone().count(), 2);
-            let first_intersection = unsafe {
+            let first_intersection = {
                 triangulation
                     .qeds
                     .edge_a_ref(intersections.clone().collect::<Vec<_>>()[0].target())
@@ -3413,7 +3412,7 @@ mod tests {
                 ),
                 (p2, p3)
             );
-            let second_intersection = unsafe {
+            let second_intersection = {
                 triangulation
                     .qeds
                     .edge_a_ref(intersections.collect::<Vec<_>>()[1].target())
@@ -3453,7 +3452,7 @@ mod tests {
                 .find_intersections_between_points(Point::new(0.0, 0.0), Point::new(8.0, 10.0));
             assert_eq!(intersections.clone().count(), 1);
 
-            let first_intersection = unsafe {
+            let first_intersection = {
                 triangulation
                     .qeds
                     .edge_a_ref(intersections.collect::<Vec<_>>()[0].target())
@@ -3677,25 +3676,17 @@ fn segment_intersection(s1: (Point, Point), s2: (Point, Point)) -> IntersectionR
 
     // Sometimes we get numerical errors when the points coincide, so we
     // check for that first
-    let t = if p == q {
+    let t = if p == q || p == s_abs {
         0.0
-    } else if p == s_abs {
-        0.0
-    } else if r_abs == q {
-        1.0
-    } else if r_abs == s_abs {
+    } else if r_abs == q || r_abs == s_abs {
         1.0
     } else {
         cross(q - p, s) / cross(r, s)
     };
 
-    let u = if q == p {
+    let u = if q == p || q == r_abs {
         0.0
-    } else if q == r_abs {
-        0.0
-    } else if s_abs == p {
-        1.0
-    } else if s_abs == r_abs {
+    } else if s_abs == p || s_abs == r_abs {
         1.0
     } else {
         cross(q - p, r) / cross(r, s)

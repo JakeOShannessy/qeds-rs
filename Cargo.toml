@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 slab = "0.4"
-nalgebra = "0.26"
+nalgebra = "0.29"
 rand = "0.8"
 getrandom = { version = "0.2", features = ["js"] }
 
