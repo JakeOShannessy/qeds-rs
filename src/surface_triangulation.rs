@@ -531,13 +531,13 @@ impl<T: Clone> SurfaceTriangulation<T> {
     }
 
     // TODO: This algorithm is known to fail in non-Delaunay triangulations.
-    pub fn locate(&self, mut point: Point) -> Option<Location> {
+    pub fn locate(&self, mut point: Point) -> Option<Location<'_>> {
         point.snap();
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
         let mut rng = rand::thread_rng();
         let mut current_iterations = 0;
-        let location: Location = loop {
+        let location: Location<'_> = loop {
             current_iterations += 1;
             if current_iterations > 200 {
                 // for (a, b, c) in self.triangles() {
@@ -611,7 +611,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
     }
 
     /// Return the canonical tri within which this point is located.
-    pub fn locate_tri(&self, point: Point) -> Option<EdgeRefA<VertexIndex, Space>> {
+    pub fn locate_tri(&self, point: Point) -> Option<EdgeRefA<'_, VertexIndex, Space>> {
         Some(self.locate(point)?.edge().get_tri_canonical())
     }
 }
@@ -686,7 +686,7 @@ impl<'a, T: Clone> Iterator for SegmentsIterMut<'a, T> {
 }
 
 impl<T> SurfaceTriangulation<T> {
-    pub fn segments(&self) -> SegmentsIter<T> {
+    pub fn segments(&self) -> SegmentsIter<'_, T> {
         SegmentsIter::new(self)
     }
     pub fn base_targets(&self) -> impl Iterator<Item = EdgeTarget> + '_ {
@@ -695,22 +695,22 @@ impl<T> SurfaceTriangulation<T> {
             .iter()
             .map(|(i, _)| EdgeTarget::new(i, 0, 0))
     }
-    pub fn segments_mut(&mut self) -> SegmentsIterMut<T> {
+    pub fn segments_mut(&mut self) -> SegmentsIterMut<'_, T> {
         SegmentsIterMut::new(self)
     }
-    pub fn raw_triangles(&self) -> RawTriangleIter<T> {
+    pub fn raw_triangles(&self) -> RawTriangleIter<'_, T> {
         RawTriangleIter::new(self)
     }
-    pub fn triangles(&self) -> TriangleIter<T> {
+    pub fn triangles(&self) -> TriangleIter<'_, T> {
         TriangleIter::new(self)
     }
-    pub fn triangle_edges(&self) -> TriangleEdgeIter<T> {
+    pub fn triangle_edges(&self) -> TriangleEdgeIter<'_, T> {
         TriangleEdgeIter::new(self)
     }
     // pub fn triangles_mut(&mut self) -> TriangleIterMut<T> {
     //     TriangleIterMut::new(self)
     // }
-    pub fn nodes(&self) -> NodeIter<T> {
+    pub fn nodes(&self) -> NodeIter<'_, T> {
         NodeIter::new(self)
     }
 
@@ -718,7 +718,7 @@ impl<T> SurfaceTriangulation<T> {
         Some(&self.qeds)
     }
 
-    pub fn some_edge_a(&self) -> Option<EdgeRefA<VertexIndex, Space>> {
+    pub fn some_edge_a(&self) -> Option<EdgeRefA<'_, VertexIndex, Space>> {
         let (i, _) = self.qeds.quads.iter().next()?;
         Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0)))
     }
@@ -743,7 +743,7 @@ impl<T> SurfaceTriangulation<T> {
         }
     }
 
-    pub fn boundary(&self) -> BoundaryIter<VertexIndex, Space> {
+    pub fn boundary(&self) -> BoundaryIter<'_, VertexIndex, Space> {
         BoundaryIter::new(&self.qeds, self.boundary_edge)
     }
 

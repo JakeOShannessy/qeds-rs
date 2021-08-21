@@ -1,7 +1,5 @@
-// #![warn(rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
 #![allow(clippy::many_single_char_names)]
-#![allow(clippy::too_many_arguments)]
-// #![allow(dead_code)]
 #[cfg(test)]
 extern crate quickcheck;
 #[cfg(test)]

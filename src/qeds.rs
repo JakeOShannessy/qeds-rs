@@ -46,7 +46,7 @@ pub struct Qeds<AData, BData> {
 
 impl<AData: Default, BData: Default> Qeds<AData, BData> {
     /// Create an edge in the [`Qeds`].
-    pub fn make_edge(&mut self) -> EdgeRefA<AData, BData> {
+    pub fn make_edge(&mut self) -> EdgeRefA<'_, AData, BData> {
         let entry = self.quads.vacant_entry();
         let this_index = entry.key();
         let quad = Quad {
@@ -86,7 +86,7 @@ impl<AData: Default, BData: Default> Qeds<AData, BData> {
 
 impl<AData, BData: Default> Qeds<AData, BData> {
     /// Create an edge in the [`Qeds`].
-    pub fn make_edge_with_a(&mut self, org: AData, dest: AData) -> EdgeRefA<AData, BData> {
+    pub fn make_edge_with_a(&mut self, org: AData, dest: AData) -> EdgeRefA<'_, AData, BData> {
         let entry = self.quads.vacant_entry();
         let this_index = entry.key();
         let quad = Quad {
@@ -132,7 +132,7 @@ impl<AData, BData> Qeds<AData, BData> {
         a_dest: AData,
         b_org: BData,
         b_dest: BData,
-    ) -> EdgeRefA<AData, BData> {
+    ) -> EdgeRefA<'_, AData, BData> {
         let entry = self.quads.vacant_entry();
         let this_index = entry.key();
         let quad = Quad {
@@ -173,7 +173,7 @@ impl<AData, BData> Qeds<AData, BData> {
 impl<AData: Clone, BData: Default> Qeds<AData, BData> {
     /// Connect the Org of a with the Dest of b by creating a new edge. TODO: we
     /// need to special case infinite edges.
-    pub fn connect(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRefA<AData, BData> {
+    pub fn connect(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRefA<'_, AData, BData> {
         // First, make the new edge.
         // Set the Org of e to the Dest of a
         let p1 = self.edge_a(edge_a.sym()).point.clone();
@@ -209,19 +209,19 @@ impl<AData, BData> Qeds<AData, BData> {
         }
     }
 
-    pub fn edge_ref(&self, target: EdgeTarget) -> EdgeRefAny<AData, BData> {
+    pub fn edge_ref(&self, target: EdgeTarget) -> EdgeRefAny<'_, AData, BData> {
         EdgeRefAny { qeds: self, target }
     }
 
-    pub fn edge_a_ref(&self, target: EdgeTarget) -> EdgeRefA<AData, BData> {
+    pub fn edge_a_ref(&self, target: EdgeTarget) -> EdgeRefA<'_, AData, BData> {
         EdgeRefA { qeds: self, target }
     }
 
-    pub fn edge_b_ref(&self, target: EdgeTarget) -> EdgeRefB<AData, BData> {
+    pub fn edge_b_ref(&self, target: EdgeTarget) -> EdgeRefB<'_, AData, BData> {
         EdgeRefB { qeds: self, target }
     }
 
-    pub fn edge_mut(&mut self, target: EdgeTarget) -> EdgeABMut<AData, BData> {
+    pub fn edge_mut(&mut self, target: EdgeTarget) -> EdgeABMut<'_, AData, BData> {
         if target.r == 0 || target.r == 2 {
             EdgeABMut::A(&mut self.quads[target.e].edges_a[(target.r / 2) as usize])
         } else {
@@ -270,7 +270,7 @@ impl<AData, BData> Qeds<AData, BData> {
         self.quads.remove(e.e);
     }
 
-    pub fn base_edges(&self) -> BaseEdgeIter<AData, BData> {
+    pub fn base_edges(&self) -> BaseEdgeIter<'_, AData, BData> {
         BaseEdgeIter::new(self)
     }
 }
@@ -332,7 +332,7 @@ impl<'a, AData, BData> EdgeRefAny<'a, AData, BData> {
     pub fn target_mut(&mut self) -> &mut EdgeTarget {
         &mut self.target
     }
-    pub fn edge(&self) -> EdgeAB<AData, BData> {
+    pub fn edge(&self) -> EdgeAB<'_, AData, BData> {
         // We know we can use this unsafe because lifetime gurantee that the
         // Qeds data structure has not been modified since this EdgeRef was
         // created.
@@ -507,7 +507,7 @@ impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
         self.rot().rot().rot().onext().rot()
     }
 
-    pub fn l_face(&self) -> Face<AData, BData> {
+    pub fn l_face(&self) -> Face<'_, AData, BData> {
         // Save the next edge of this face so that we know when to end the loop.
         let first_next_edge = self.l_next();
         let mut edges = Vec::new();
@@ -522,7 +522,7 @@ impl<'a, AData, BData> EdgeRefA<'a, AData, BData> {
         }
         Face { edges }
     }
-    pub fn r_face(&self) -> Face<AData, BData> {
+    pub fn r_face(&self) -> Face<'_, AData, BData> {
         // Save the next edge of this face so that we know when to end the loop.
         let first_next_edge = self.r_next();
         let mut edges = Vec::new();
@@ -633,7 +633,7 @@ impl<'a, AData, BData> EdgeRefB<'a, AData, BData> {
         self.rot().rot().rot()
     }
 
-    pub fn l_face(&self) -> FaceB<AData, BData> {
+    pub fn l_face(&self) -> FaceB<'_, AData, BData> {
         // Save the next edge of this face so that we know when to end the loop.
         let first_next_edge = self.l_next();
         let mut edges = Vec::new();
@@ -648,7 +648,7 @@ impl<'a, AData, BData> EdgeRefB<'a, AData, BData> {
         }
         FaceB { edges }
     }
-    pub fn r_face(&self) -> FaceB<AData, BData> {
+    pub fn r_face(&self) -> FaceB<'_, AData, BData> {
         // Save the next edge of this face so that we know when to end the loop.
         let first_next_edge = self.r_next();
         let mut edges = Vec::new();

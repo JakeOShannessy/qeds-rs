@@ -558,10 +558,10 @@ impl ConstrainedTriangulation {
         }
     }
 
-    pub fn triangles(&self) -> TriangleIter {
+    pub fn triangles(&self) -> TriangleIter<'_> {
         TriangleIter::new(self)
     }
-    pub fn nodes(&self) -> NodeIter {
+    pub fn nodes(&self) -> NodeIter<'_> {
         NodeIter::new(self)
     }
 
@@ -569,14 +569,14 @@ impl ConstrainedTriangulation {
         Some(&self.qeds)
     }
 
-    pub fn some_edge_a(&self) -> Option<EdgeRefA<Segment, ()>> {
+    pub fn some_edge_a(&self) -> Option<EdgeRefA<'_,Segment, ()>> {
         let (i, _) = self.qeds.quads.iter().next()?;
         Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0)))
     }
 
     // TODO: This has not yet been proved to be stable. It may also loop
     // inifintely, particularly with constrianed triangulations.
-    pub fn locate(&self, point: Point) -> Option<EdgeRefA<Segment, ()>> {
+    pub fn locate(&self, point: Point) -> Option<EdgeRefA<'_,Segment, ()>> {
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
         let mut rng = rand::thread_rng();
@@ -622,7 +622,7 @@ impl ConstrainedTriangulation {
     }
 
     /// Return the canonical tri within which this point is located.
-    pub fn locate_tri(&self, point: Point) -> Option<EdgeRefA<Segment, ()>> {
+    pub fn locate_tri(&self, point: Point) -> Option<EdgeRefA<'_, Segment, ()>> {
         self.locate(point).map(|edge| edge.get_tri_canonical())
     }
 
@@ -666,7 +666,7 @@ impl ConstrainedTriangulation {
     /// trianglulation as it is required for the end condition. If we pass
     /// through a point on a constraint segment, we also report that as an
     /// intersection. TODO: this needs extensive revision.
-    fn find_intersections_between_points(&self, a: Point, b: Point) -> IntersectionIter {
+    fn find_intersections_between_points(&self, a: Point, b: Point) -> IntersectionIter<'_> {
         IntersectionIter::new(self, a, b)
     }
 
@@ -917,7 +917,7 @@ impl ConstrainedTriangulation {
         Some(())
     }
 
-    fn connect(&mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<Segment, ()> {
+    fn connect(&mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, Segment, ()> {
         let e = self.qeds.connect(a, b).target();
         {
             self.qeds.edge_a_mut(e).point.constraint = false;
@@ -1080,7 +1080,7 @@ impl ConstrainedTriangulation {
         }
     }
 
-    pub fn boundary(&self) -> BoundaryIter<Segment, ()> {
+    pub fn boundary(&self) -> BoundaryIter<'_, Segment, ()> {
         BoundaryIter::new(&self.qeds, self.boundary_edge)
     }
 
@@ -1760,8 +1760,8 @@ impl ConstrainedTriangulation {
     pub fn find_node_path_nodes(
         &self,
         tri_info: &LinkageMap,
-        node_a: EdgeRefA<Segment, ()>,
-        node_b: EdgeRefA<Segment, ()>,
+        node_a: EdgeRefA<'_, Segment, ()>,
+        node_b: EdgeRefA<'_, Segment, ()>,
     ) -> Option<Vec<EdgeTarget>> {
         // If the two nodes are the same, we return a single path of that node.
         if node_a == node_b {
@@ -3622,7 +3622,7 @@ fn cross(pa: Point, pb: Point) -> f64 {
     pa.x * pb.y - pb.x * pa.y
 }
 
-fn show_triangle(triangle: EdgeRefA<Segment, ()>) -> String {
+fn show_triangle(triangle: EdgeRefA<'_, Segment, ()>) -> String {
     format!(
         "{}-{}-{}",
         triangle.edge().point.point(),
@@ -3631,7 +3631,7 @@ fn show_triangle(triangle: EdgeRefA<Segment, ()>) -> String {
     )
 }
 
-fn show_edge(edge: EdgeRefA<Segment, ()>) -> String {
+fn show_edge(edge: EdgeRefA<'_, Segment, ()>) -> String {
     format!(
         "{}-{}",
         edge.edge().point.point(),

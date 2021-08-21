@@ -98,7 +98,7 @@ impl<AData: HasPoint + Clone, BData: Clone> Face<'_, AData, BData> {
         }
         0.5 * sum
     }
-    pub fn vertices(&self) -> FaceVerticesIter<AData, BData> {
+    pub fn vertices(&self) -> FaceVerticesIter<'_, AData, BData> {
         FaceVerticesIter::new(self)
     }
     pub fn vertices_pairs(&self) -> VertexPairIter<'_, AData, BData> {
@@ -175,14 +175,14 @@ impl Triangulation {
         Some(&self.qeds)
     }
 
-    pub fn some_edge_a(&self) -> Option<EdgeRefA<Point, ()>> {
+    pub fn some_edge_a(&self) -> Option<EdgeRefA<'_, Point, ()>> {
         let (i, _) = self.qeds.quads.iter().next()?;
         Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0)))
     }
 
     // TODO: we need to be able to locate on an edge etc.
     // TODO: This has not yet been proved to be stable. It may also loop inifintely
-    pub fn locate(&self, point: Point) -> Option<EdgeRefA<Point, ()>> {
+    pub fn locate(&self, point: Point) -> Option<EdgeRefA<'_, Point, ()>> {
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
         let mut rng = rand::thread_rng();
@@ -416,7 +416,7 @@ impl Triangulation {
         self.add_external_point_ordered(boundary_edges, point);
     }
 
-    pub fn boundary(&self) -> BoundaryIter<Point, ()> {
+    pub fn boundary(&self) -> BoundaryIter<'_, Point, ()> {
         BoundaryIter::new(&self.qeds, self.boundary_edge)
     }
 
@@ -424,7 +424,7 @@ impl Triangulation {
         &mut self,
         boundary_edge: EdgeTarget,
         p: Point,
-    ) -> (EdgeRefA<Point, ()>, EdgeRefA<Point, ()>) {
+    ) -> (EdgeRefA<'_,Point, ()>, EdgeRefA<'_,Point, ()>) {
         let dest = self.qeds.edge_a_ref(boundary_edge).sym().edge().point;
         let e = self.qeds.make_edge_with_a(p, dest).target();
         self.qeds.splice(e.sym(), boundary_edge.sym());
