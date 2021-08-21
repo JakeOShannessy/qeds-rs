@@ -1,6 +1,177 @@
 use crate::point::*;
 use crate::qeds::*;
-use nalgebra::Matrix4;
+
+pub trait HasPoint {
+    fn point(&self) -> Point;
+}
+
+impl HasPoint for Point {
+    fn point(&self) -> Point {
+        *self
+    }
+}
+
+impl<'a, AData: HasPoint, BData> EdgeRefA<'a, AData, BData> {
+    pub fn midpoint(&self) -> Point {
+        let this_point = self.edge().point.point();
+        let next_point = self.sym().edge().point.point();
+        this_point.midpoint(next_point)
+    }
+
+    pub fn in_left_face(&self, point: Point) -> bool {
+        for edge in self.l_face().edges.iter() {
+            let is_left = edge.lies_left(point);
+            if !is_left {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn lies_right(&self, point: Point) -> Lies {
+        use Lies::*;
+        let pa = self.edge().point.point();
+        let pb = self.sym().edge().point.point();
+        // We have special treatment of infinite edges.
+        match left_or_right(pa, pb, point) {
+            Direction::Right => Yes,
+            Direction::Straight => On,
+            Direction::Left => No,
+        }
+    }
+
+    pub fn lies_right_strict(&self, point: Point) -> bool {
+        self.lies_right(point) == Lies::Yes
+    }
+
+    pub fn lies_left(&self, point: Point) -> bool {
+        let pa = self.edge().point.point();
+        let pb = self.sym().edge().point.point();
+        // We have special treatment of infinite edges.
+        match left_or_right(pa, pb, point) {
+            Direction::Right => false,
+            Direction::Straight => false,
+            Direction::Left => true,
+        }
+    }
+}
+
+impl<'a, AData: HasPoint, BData> Iterator for FaceVerticesIter<'a, AData, BData> {
+    type Item = Point;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_index >= self.face.edges.len() {
+            None
+        } else {
+            let edge = self.face.edges.get(self.next_index)?;
+            self.next_index += 1;
+            Some(edge.edge().point.point())
+        }
+    }
+}
+
+impl<AData: HasPoint + Clone, BData: Clone> Face<'_, AData, BData> {
+    pub fn centroid(&self) -> Option<Point> {
+        let signed_area = self.signed_area();
+        if signed_area <= 0.0 {
+            return None;
+        }
+        let mut xsum = 0.0;
+        let mut ysum = 0.0;
+        for (pa, pb) in self.vertices_pairs() {
+            let pa = pa;
+            let pb = pb;
+            xsum += (pa.x + pb.x) * (pa.x * pb.y - pb.x * pa.y);
+            ysum += (pa.y + pb.y) * (pa.x * pb.y - pb.x * pa.y);
+        }
+        Some(Point {
+            x: xsum / 6.0 / signed_area,
+            y: ysum / 6.0 / signed_area,
+        })
+    }
+
+    pub fn signed_area(&self) -> f64 {
+        let mut sum = 0.0;
+        for (pa, pb) in self.vertices_pairs() {
+            let pa = pa;
+            let pb = pb;
+            sum += pa.x * pb.y - pb.x * pa.y;
+        }
+        0.5 * sum
+    }
+    pub fn vertices(&self) -> FaceVerticesIter<AData, BData> {
+        FaceVerticesIter::new(self)
+    }
+    pub fn vertices_pairs(&self) -> VertexPairIter<'_, AData, BData> {
+        self.vertices().zip(self.vertices().cycle().skip(1))
+    }
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub enum Lies {
+    Yes,
+    No,
+    On,
+}
+
+/// Determine whether a set of 4 points satisfies the Delaunay criterion. This
+/// assumes that the pointes are sorted in a CCW fashion.
+pub fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
+    // TODO: It seems the LU algorithm from nalgebra is better
+    let det = determinant_4x4(
+        a.x,
+        a.y,
+        a.x.powi(2) + a.y.powi(2),
+        1.0,
+        b.x,
+        b.y,
+        b.x.powi(2) + b.y.powi(2),
+        1.0,
+        c.x,
+        c.y,
+        c.x.powi(2) + c.y.powi(2),
+        1.0,
+        d.x,
+        d.y,
+        d.x.powi(2) + d.y.powi(2),
+        1.0,
+    );
+    det > 0.0
+}
+fn determinant_4x4(
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    e: f64,
+    f: f64,
+    g: f64,
+    h: f64,
+    i: f64,
+    j: f64,
+    k: f64,
+    l: f64,
+    m: f64,
+    n: f64,
+    o: f64,
+    p: f64,
+) -> f64 {
+    a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
+        + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
+        - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
+}
+
+pub fn is_ccw(p1: Point, p2: Point, p3: Point) -> bool {
+    determinant_3x3(p1.x, p1.y, 1.0, p2.x, p2.y, 1.0, p3.x, p3.y, 1.0) > 0.0
+}
+
+fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
+    a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
+        + c * determinant_2x2(d, e, g, h)
+}
+
+fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
+    a * d - b * c
+}
 
 #[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
@@ -393,63 +564,6 @@ pub struct Triangle {
     /// three that make up the triangle.
     pub target: EdgeTarget,
 }
-
-/// Determine whether a set of 4 points satisfies the Delaunay criterion. This
-/// assumes that the pointes are sorted in a CCW fashion.
-fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
-    // TODO: hard-code this
-    let matrix: Matrix4<f64> = Matrix4::new(
-        a.x,
-        a.y,
-        a.x.powi(2) + a.y.powi(2),
-        1.0,
-        b.x,
-        b.y,
-        b.x.powi(2) + b.y.powi(2),
-        1.0,
-        c.x,
-        c.y,
-        c.x.powi(2) + c.y.powi(2),
-        1.0,
-        d.x,
-        d.y,
-        d.x.powi(2) + d.y.powi(2),
-        1.0,
-    );
-    let det = matrix.determinant();
-    det > 0.0
-}
-// fn determinant_4x4(
-//     a: f64,
-//     b: f64,
-//     c: f64,
-//     d: f64,
-//     e: f64,
-//     f: f64,
-//     g: f64,
-//     h: f64,
-//     i: f64,
-//     j: f64,
-//     k: f64,
-//     l: f64,
-//     m: f64,
-//     n: f64,
-//     o: f64,
-//     p: f64,
-// ) -> f64 {
-//     a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
-//         + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
-//         - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
-// }
-
-// fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
-//     a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
-//         + c * determinant_2x2(d, e, g, h)
-// }
-
-// fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
-//     a * d - b * c
-// }
 
 pub fn has_edge(triangulation: &Triangulation, pa: Point, pb: Point) -> bool {
     get_edge(triangulation, pa, pb).is_some()
@@ -848,6 +962,244 @@ mod tests {
             centre.x /= n as f64;
             centre.y /= n as f64;
             assert_eq!(centre, Point::new(2.5, 5.0 / 3.0))
+        }
+    }
+
+    #[test]
+    fn triangle_face() {
+        // Step 1. Create a Qeds data structure.
+        let mut qeds: Qeds<Point, ()> = Qeds::new();
+        // Create some point to add geometry.
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(5.0, 0.0);
+        let p3 = Point::new(2.5, 5.0);
+        // Step 2. Add some edges to it.
+        let q1 = qeds.make_edge_with_a(p1, p2).target;
+        let q2 = qeds.make_edge_with_a(p2, p3).target;
+
+        {
+            // Step 3. Splice those edges together so that we actually have
+            // something of a network.
+            qeds.splice(q1.sym(), q2);
+            assert_eq!(qeds.edge_a_ref(q1).l_next(), qeds.edge_a_ref(q2));
+            assert_eq!(qeds.edge_a_ref(q2).onext(), qeds.edge_a_ref(q1).sym());
+            assert_eq!(
+                qeds.edge_a_ref(q1).rot().sym().onext().rot(),
+                qeds.edge_a_ref(q2)
+            );
+            let q3 = qeds.connect(q2, q1).target;
+            assert_eq!(qeds.edge_a_ref(q2).sym().onext(), qeds.edge_a_ref(q3));
+
+            let edge = qeds.edge_a_ref(EdgeTarget::new(0, 0, 0));
+            assert_eq!(edge.l_next(), qeds.edge_a_ref(q2));
+            assert_eq!(edge.l_next().l_next(), edge.onext().sym());
+            assert_eq!(edge.l_next().l_next().l_next(), edge);
+
+            assert_eq!(edge.edge().point, p1);
+            assert_eq!(edge.sym().edge().point, p2);
+            assert_eq!(edge.l_next().edge().point, p2);
+            assert_eq!(edge.l_next().sym().edge().point, p3);
+            assert_eq!(edge.l_next().l_next().edge().point, p3);
+            assert_eq!(edge.l_next().l_next().sym().edge().point, p1);
+            // Get the face from it.
+            let face = edge.l_face();
+            for (edge, (p1, p2)) in face
+                .edges
+                .iter()
+                .zip(vec![(p2, p3), (p3, p1), (p1, p2)].into_iter())
+            {
+                println!(
+                    "Edge[]: {:?} -> {:?}",
+                    edge.edge().point,
+                    edge.sym().edge().point
+                );
+                assert_eq!(edge.edge().point, p1);
+                assert_eq!(edge.sym().edge().point, p2);
+            }
+            // It should have 3 edges.
+            assert_eq!(face.edges.len(), 3);
+            assert_eq!(face.vertices().count(), 3);
+
+            assert_eq!(
+                face.centroid(),
+                Some(Point {
+                    x: 2.5,
+                    y: 1.6666666666666665
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn quad2() {
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(5.0, 0.0);
+        let p3 = Point::new(2.5, 5.0);
+        let p4 = Point::new(5.0, 5.0);
+        // All the geometry data is set up here. This makes the whole thing
+        // static of course.
+        //
+        // Step 1. Create a Qeds data structure.
+        let mut qeds: Qeds<Point, ()> = Qeds::new();
+        // Step 2. Add the first two edges.
+        let q1 = qeds.make_edge_with_a(p1, p2).target;
+        let q2 = qeds.make_edge_with_a(p2, p3).target;
+        let q4 = qeds.make_edge_with_a(p4, p3).target;
+
+        // Step 4. Splice those edges together so that we actually have
+        // something of a network. This adds the third edge.
+        {
+            qeds.splice(q1.sym(), q2);
+            assert_eq!(qeds.edge_a_ref(q1).sym().onext().target, q2);
+            let e = qeds.connect(q2, q1).target();
+            // At this point the triangle has been created.
+            {
+                assert_eq!(qeds.edge_a_ref(q1).l_next().target, q2);
+                assert_eq!(qeds.edge_a(q1).point, p1);
+                assert_eq!(qeds.edge_a(q1.sym()).point, p2);
+                assert_eq!(qeds.edge_a_ref(q1).l_next().edge().point, p2);
+                assert_eq!(qeds.edge_a_ref(q1).l_next().sym().edge().point, p3);
+                assert_eq!(qeds.edge_a_ref(q1).l_next().l_next().edge().point, p3);
+                assert_eq!(qeds.edge_a_ref(EdgeTarget::new(3, 0, 0)).edge().point, p3);
+                assert_eq!(
+                    qeds.edge_a_ref(EdgeTarget::new(3, 0, 0)).sym().edge().point,
+                    p1
+                );
+                assert_eq!(qeds.edge_a_ref(q1).l_next().l_next().sym().edge().point, p1);
+            }
+
+            assert_eq!(qeds.edge_a_ref(e).onext().target, q2.sym());
+
+            // Now we want to splice on the fourth edge.
+            qeds.splice(q4.sym(), q2.sym());
+            // 1. dSymOnext == c
+            assert_eq!(qeds.edge_a_ref(q4).sym().onext().target(), e);
+            // 2. bSymOnext == dSym
+            assert_eq!(qeds.edge_a_ref(q2).sym().onext().target(), q4.sym());
+            // 3. dSymRotOnext == bRot
+            assert_eq!(qeds.edge_a_ref(q4).sym().rot().onext().target(), q2.rot());
+            // 4. cRotOnext == dRot
+            assert_eq!(qeds.edge_a_ref(e).rot().onext().target(), q4.rot());
+
+            // Now we add in the fifth edge, closing the quad.
+            qeds.connect(q2.sym(), q4);
+
+            // Check the first triangle face
+            assert_eq!(
+                qeds.edge_a_ref(q1).rot().sym().onext().target(),
+                q2.rot().sym()
+            );
+        }
+        {
+            // Get the first edge.
+            let edge = qeds.edge_a_ref(EdgeTarget::new(0, 0, 0));
+
+            println!(
+                "Edge1[{:?}]: {:?} -> {:?}",
+                edge.edge() as *const Edge<Point>,
+                edge.edge().point,
+                edge.sym().edge().point
+            );
+            println!(
+                "Edge2[{:?}]: {:?} -> {:?}",
+                edge.l_next().edge() as *const Edge<Point>,
+                edge.l_next().edge().point,
+                edge.l_next().sym().edge().point
+            );
+            println!(
+                "Edge3[{:?}]: {:?} -> {:?}",
+                edge.l_next().l_next().edge() as *const Edge<Point>,
+                edge.l_next().l_next().edge().point,
+                edge.l_next().l_next().sym().edge().point
+            );
+            println!(
+                "Edge4[{:?}]: {:?} -> {:?}",
+                edge.l_next().l_next().l_next().edge() as *const Edge<Point>,
+                edge.l_next().l_next().l_next().edge().point,
+                edge.l_next().l_next().l_next().sym().edge().point
+            );
+
+            assert_eq!(edge.l_next().target(), q2);
+            assert_eq!(edge.edge().point, p1);
+            assert_eq!(edge.sym().edge().point, p2);
+            assert_eq!(edge.l_next().edge().point, p2);
+            assert_eq!(edge.l_next().sym().edge().point, p3);
+            assert_eq!(edge.l_next().l_next().edge().point, p3);
+            assert_eq!(edge.l_next().l_next().sym().edge().point, p1);
+
+            // Get the face from it.
+            let face = edge.l_face();
+            // It should have 3 edges.
+            assert_eq!(face.edges.len(), 3);
+            let edge1 = qeds.base_edges().next().unwrap();
+            assert_eq!(edge1.l_face().edges.len(), 3);
+
+            let mut midpoints = Vec::new();
+            println!("looping through face");
+            for (edge, (p1, p2)) in face
+                .edges
+                .iter()
+                .zip(vec![(p2, p3), (p3, p1), (p1, p2)].into_iter())
+            {
+                println!(
+                    "Edge[]: {:?} -> {:?}",
+                    edge.edge().point,
+                    edge.sym().edge().point
+                );
+                assert_eq!(edge.edge().point, p1);
+                assert_eq!(edge.sym().edge().point, p2);
+                midpoints.push(edge.midpoint());
+            }
+            let mut centre = Point::new(0.0, 0.0);
+            let n = midpoints.len();
+            println!("midpoints: {:?}", midpoints);
+            for p in midpoints.into_iter() {
+                centre.x += p.x;
+                centre.y += p.y;
+            }
+            centre.x /= n as f64;
+            centre.y /= n as f64;
+            assert_eq!(centre, Point::new(2.5, 5.0 / 3.0))
+        }
+    }
+
+    #[test]
+    fn bad_collinear() {
+        let b = Point::new(-10000.0, -1.0);
+        let c = Point::new(-9000.0, -1.0);
+        let d = Point::new(std::f64::MIN, -1.0 - std::f64::EPSILON);
+        let p = Point::new(10000.0, -1.0);
+        // This is a problem as it means we can have a triangle with both sides
+        // collinear with another point. This indicates that our collinearity
+        // test is insufficient.
+        assert_ne!(b, d);
+        assert_eq!(left_or_right(b, c, p), Direction::Straight);
+        assert_eq!(left_or_right(d, c, p), Direction::Right);
+    }
+
+    #[test]
+    fn segment() {
+        // Step 1. Create a Qeds data structure.
+        let mut qeds: Qeds<Point, ()> = Qeds::new();
+        let point_a = Point::new(0.0, 0.0);
+        let point_b = Point::new(5.0, 0.0);
+        // Step 2. Add some edges to it.
+        let q1 = qeds.make_edge_with_a(point_a, point_b).target;
+        println!("q1 Target: {:?}", q1);
+        {
+            let e = &qeds.quads[0].edges_a[0];
+            // e with sym applied 2 times is the same edge as e
+            assert_eq!(
+                qeds.edge_a_ref(q1).edge() as *const Edge<Point>,
+                e as *const Edge<Point>
+            );
+            assert_eq!(qeds.edge_a_ref(q1).sym().sym().edge(), e);
+            // The Org of the edge is a point and it is point_a
+            assert_eq!(qeds.edge_a_ref(q1).edge().point, point_a);
+            // The Dest of the edge (eSymOrg) is point_b
+            println!("aa: {:?}", qeds.edge_a_ref(q1).target());
+            println!("ab: {:?}", qeds.edge_a_ref(q1).sym().target());
+            assert_eq!(qeds.edge_a_ref(q1).sym().edge().point, point_b);
         }
     }
 }

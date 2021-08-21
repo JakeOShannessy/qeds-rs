@@ -1,6 +1,8 @@
 use crate::point::*;
 use crate::qeds::*;
-use nalgebra::Matrix4;
+use crate::triangulation::del_test_ccw;
+use crate::triangulation::HasPoint;
+use crate::triangulation::Lies;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     num::NonZeroUsize,
@@ -8,7 +10,7 @@ use std::{
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Intersection {
-    /// Contains the edge that is intersectect.
+    /// Contains the edge that is intersected.
     Edge(EdgeTarget),
     /// Contains the edge that has it's origin at the point that is intersected.
     Point(EdgeTarget),
@@ -2410,81 +2412,6 @@ pub struct Triangle {
     /// three that make up the triangle.
     pub target: EdgeTarget,
 }
-
-/// Determine whether a set of 4 points satisfies the Delaunay criterion. This
-/// assumes that the pointes are sorted in a CCW fashion.
-fn del_test_ccw(a: Point, b: Point, c: Point, d: Point) -> bool {
-    // TODO: hard-code this
-    let matrix: Matrix4<f64> = Matrix4::new(
-        a.x,
-        a.y,
-        a.x.powi(2) + a.y.powi(2),
-        1.0,
-        b.x,
-        b.y,
-        b.x.powi(2) + b.y.powi(2),
-        1.0,
-        c.x,
-        c.y,
-        c.x.powi(2) + c.y.powi(2),
-        1.0,
-        d.x,
-        d.y,
-        d.x.powi(2) + d.y.powi(2),
-        1.0,
-    );
-    let det = matrix.determinant();
-    // TODO: It seems the LU algorithm from nalgebra is better
-    // let new_det = determinant_4x4(a.x,
-    //     a.y,
-    //     a.x.powi(2) + a.y.powi(2),
-    //     1.0,
-    //     b.x,
-    //     b.y,
-    //     b.x.powi(2) + b.y.powi(2),
-    //     1.0,
-    //     c.x,
-    //     c.y,
-    //     c.x.powi(2) + c.y.powi(2),
-    //     1.0,
-    //     d.x,
-    //     d.y,
-    //     d.x.powi(2) + d.y.powi(2),
-    //     1.0,);
-    // assert_eq!(det, new_det);
-    det > 0.0
-}
-// fn determinant_4x4(
-//     a: f64,
-//     b: f64,
-//     c: f64,
-//     d: f64,
-//     e: f64,
-//     f: f64,
-//     g: f64,
-//     h: f64,
-//     i: f64,
-//     j: f64,
-//     k: f64,
-//     l: f64,
-//     m: f64,
-//     n: f64,
-//     o: f64,
-//     p: f64,
-// ) -> f64 {
-//     a * determinant_3x3(f, g, h, j, k, l, n, o, p) - b * determinant_3x3(e, g, h, i, k, l, m, o, p)
-//         + c * determinant_3x3(e, f, h, i, j, l, m, n, p)
-//         - d * determinant_3x3(e, f, g, i, j, k, m, n, o)
-// }
-
-// fn determinant_3x3(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, h: f64, i: f64) -> f64 {
-//     a * determinant_2x2(e, f, h, i) - b * determinant_2x2(d, f, g, i)
-//         + c * determinant_2x2(d, e, g, h)
-// }
-
-// fn determinant_2x2(a: f64, b: f64, c: f64, d: f64) -> f64 {
-//     a * d - b * c
-// }
 
 pub fn has_edge(triangulation: &ConstrainedTriangulation, pa: Point, pb: Point) -> bool {
     get_edge(triangulation, pa, pb).is_some()
