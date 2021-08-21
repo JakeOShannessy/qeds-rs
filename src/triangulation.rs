@@ -480,20 +480,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bad_collinear() {
-        let b = Point::new(-10000.0, -1.0);
-        let c = Point::new(-9000.0, -1.0);
-        let d = Point::new(std::f64::MIN, -1.0 - std::f64::EPSILON);
-        let p = Point::new(10000.0, -1.0);
-        // This is a problem as it means we can have a triangle with both sides
-        // collinear with another point. This indicates that our collinearity
-        // test is insufficient.
-        assert_ne!(b, d);
-        assert_eq!(left_or_right(b, c, p), Direction::Straight);
-        assert_eq!(left_or_right(d, c, p), Direction::Straight);
-    }
-
-    #[test]
     fn one_point_triangulation_only() {
         let mut triangulation = Triangulation::new();
         let p1 = Point::new(0.0, 0.0);
