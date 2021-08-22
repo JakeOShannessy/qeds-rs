@@ -291,7 +291,6 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             let base_ref = self.connect(edge_target, base.sym());
             // edge_target = base_ref.onext().target();
             base = base_ref.target();
-
         }
 
         // let e = self.qeds.edge_a_ref(base).oprev().target();
@@ -299,7 +298,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         self.retriangulate_suspect_edges(edge_target, point, first_index);
         // TODO: remove this.
         self.retriangulate_all();
-        assert_eq!(0,self.retriangulate_all());
+        assert_eq!(0, self.retriangulate_all());
         debug_assert_eq!(
             self.vertices
                 .get(self.qeds.edge_a_ref(base.sym()).edge().point)
@@ -319,6 +318,10 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
     fn connect(&'_ mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, VertexIndex, ()> {
         let e = self.qeds.connect(a, b).target();
         self.qeds.edge_a_ref(e)
+    }
+
+    pub fn add_point_with_default(&mut self, point: Point) -> Option<EdgeTarget> {
+        self.add_point(point, Default::default())
     }
 
     /// The edge this returns should always have the added point at its origin.
@@ -373,7 +376,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             #[cfg(not(debug_assertions))]
             return edge_target;
             let dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
-            debug_assert_ne!(dprev,edge_target);
+            debug_assert_ne!(dprev, edge_target);
             self.qeds.delete(edge_target);
             edge_target = dprev;
             self.add_to_boundary_unchecked(edge_target, point, data)
@@ -413,6 +416,33 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
                 self.add_point_to_edge_unchecked(edge_target, point, data)
             }
         }
+    }
+}
+
+impl<T: Default> SurfaceTriangulation<T> {
+    pub fn new_with_default(a: Point, b: Point, c: Point) -> Self {
+        assert!(is_ccw(a, b, c));
+        let seg_a = Segment::new(a, Default::default());
+        let seg_b = Segment::new(b, Default::default());
+        let seg_c = Segment::new(c, Default::default());
+        let a_index = 0;
+        let b_index = 1;
+        let c_index = 2;
+        let mut qeds = Qeds::new();
+        let edge_a = qeds.make_edge_with_ab(a_index, b_index, (), ()).target();
+        let edge_b = qeds.make_edge_with_ab(b_index, c_index, (), ()).target();
+        let result = {
+            qeds.splice(edge_a.sym(), edge_b);
+            qeds.connect(edge_b, edge_a);
+            // qeds.quads[2].edges_b[0].point = Space::Out;
+            SurfaceTriangulation {
+                qeds,
+                vertices: vec![seg_a, seg_b, seg_c],
+                boundary_edge: edge_a,
+                bounds: None,
+            }
+        };
+        result
     }
 }
 
@@ -617,6 +647,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
             //     segment.1,
             //     left_or_right(segment.0, segment.1, point)
             // );
+            let has_left_face = self.curves_left(e);
             if point == self.vertices.get(e.edge().point).unwrap().point {
                 break Location::OnPoint(e);
             } else if point == self.vertices.get(e.sym().edge().point).unwrap().point {
@@ -629,41 +660,38 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 //     point, segment.0, segment.1
                 // );
                 e = e.sym();
-            } else {
-                let has_left_face = self.curves_left(e);
-                if has_left_face {
-                    // eprintln!("e HasLeftFace: {:?}", has_left_face);
-                    #[allow(clippy::collapsible_else_if)]
-                    if onext_first {
-                        if !self.lies_right_strict(e.onext(), point) {
-                            e = e.onext();
-                        } else if !self.lies_right_strict(e.d_prev(), point) {
-                            e = e.d_prev();
-                        } else {
-                            if self.lies_left_strict(e, point) {
-                                break Location::OnFace(e);
-                            } else {
-                                break Location::OnEdge(e);
-                            }
-                        }
+            } else if has_left_face {
+                // eprintln!("e HasLeftFace: {:?}", has_left_face);
+                #[allow(clippy::collapsible_else_if)]
+                if onext_first {
+                    if !self.lies_right_strict(e.onext(), point) {
+                        e = e.onext();
+                    } else if !self.lies_right_strict(e.d_prev(), point) {
+                        e = e.d_prev();
                     } else {
-                        if !self.lies_right_strict(e.d_prev(), point) {
-                            e = e.d_prev();
-                        } else if !self.lies_right_strict(e.onext(), point) {
-                            e = e.onext();
+                        if self.lies_left_strict(e, point) {
+                            break Location::OnFace(e);
                         } else {
-                            if self.lies_left_strict(e, point) {
-                                break Location::OnFace(e);
-                            } else {
-                                break Location::OnEdge(e);
-                            }
+                            break Location::OnEdge(e);
                         }
                     }
-                } else if self.lies_left_strict(e, point) {
-                    return None;
                 } else {
-                    break Location::OnEdge(e);
+                    if !self.lies_right_strict(e.d_prev(), point) {
+                        e = e.d_prev();
+                    } else if !self.lies_right_strict(e.onext(), point) {
+                        e = e.onext();
+                    } else {
+                        if self.lies_left_strict(e, point) {
+                            break Location::OnFace(e);
+                        } else {
+                            break Location::OnEdge(e);
+                        }
+                    }
                 }
+            } else if self.lies_left_strict(e, point) {
+                return None;
+            } else {
+                break Location::OnEdge(e.sym());
             }
         };
         Some(location)
@@ -849,6 +877,7 @@ impl<T> SurfaceTriangulation<T> {
     pub fn get_segment(&self, edge: EdgeRefA<'_, VertexIndex, ()>) -> (Point, Point) {
         let p1 = self.vertices.get(edge.edge().point).unwrap().point;
         let p2 = self.vertices.get(edge.sym().edge().point).unwrap().point;
+        debug_assert_ne!(p1, p2);
         (p1, p2)
     }
     /// Test whether an edge is the diagonal of a concave quad.
@@ -1523,6 +1552,34 @@ mod tests {
         assert!(location.is_some());
         triangulation.add_point(p, 0);
         debug_assert_spaces(&triangulation);
+    }
+
+    #[test]
+    fn add_to_boundary() {
+        let vs: Vec<_> = vec![
+            Point::new(0.0, 0.0),
+            Point::new(5.0, 0.0),
+            Point::new(5.0, 5.0),
+        ];
+        let mut triangulation = SurfaceTriangulation::<()>::new_with_default(vs[0], vs[1], vs[2]);
+        let p = Point::new(5.0, 2.5);
+        let location = triangulation.locate(p).unwrap();
+        match location {
+            Location::OnEdge(edge) => {
+                let segment = triangulation.get_segment(edge);
+                assert_eq!(segment, (vs[1], vs[2]));
+            }
+            _ => panic!("wrong location"),
+        }
+        assert_eq!(1, triangulation.triangles().count());
+        triangulation.add_point_with_default(p);
+        assert_eq!(2, triangulation.triangles().count());
+        // triangulation.add_point_with_default(Point::new(2.0, 0.0));
+        debug_assert_spaces(&triangulation);
+        // let p = Point::new(1.875, -3.2475);
+        // assert!(location.is_some());
+        // triangulation.add_point(p, 0);
+        // debug_assert_spaces(&triangulation);
     }
 
     #[test]
