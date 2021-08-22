@@ -141,9 +141,13 @@ impl<T> SurfaceTriangulation<T> {
         self.lies_right(edge_ref, point) == Lies::Yes
     }
 
-    pub fn is_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
+    pub fn is_outward_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
         // edge_ref.rot().edge().point == Space::Out || edge_ref.rot().sym().edge().point == Space::Out
         !self.curves_left(edge_ref)
+    }
+
+    pub fn is_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
+        self.is_outward_boundary(edge_ref) || self.is_outward_boundary(edge_ref.sym())
     }
 
     pub fn curves_left(&self, e: EdgeRefA<'_, VertexIndex, ()>) -> bool {
@@ -271,50 +275,6 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         base.sym()
     }
 
-    // TODO: this algorithm is still not great.
-    fn add_to_boundary_unchecked(
-        &mut self,
-        mut edge_target: EdgeTarget,
-        point: Point,
-        data: T,
-    ) -> EdgeTarget {
-        let first_index = self.qeds.edge_a_ref(edge_target).sym().edge().point;
-        let new_index = self.vertices.len();
-        self.vertices.push(Segment::new(point, data));
-        let mut base = self.qeds.make_edge_with_a(first_index, new_index).target();
-        self.qeds.splice(base, edge_target.sym());
-        {
-            let base_ref = self.connect(edge_target.sym(), base.sym());
-            edge_target = base_ref.oprev().target();
-            base = base_ref.target();
-
-            let base_ref = self.connect(edge_target, base.sym());
-            // edge_target = base_ref.onext().target();
-            base = base_ref.target();
-        }
-
-        // let e = self.qeds.edge_a_ref(base).oprev().target();
-        debug_assert_spaces(self);
-        self.retriangulate_suspect_edges(edge_target, point, first_index);
-        // TODO: remove this.
-        self.retriangulate_all();
-        assert_eq!(0, self.retriangulate_all());
-        debug_assert_eq!(
-            self.vertices
-                .get(self.qeds.edge_a_ref(base.sym()).edge().point)
-                .unwrap()
-                .point(),
-            point
-        );
-        // self.retriangulate_all();
-        // for fail in self.fail_del_test() {
-        //     eprintln!("{:?} failed del test", fail);
-        // }
-        // debug_assert_eq!(0, self.n_fail_del_test());
-        // eprintln!("inserted: {}", point);
-        debug_assert_spaces(self);
-        base.sym()
-    }
     fn connect(&'_ mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, VertexIndex, ()> {
         let e = self.qeds.connect(a, b).target();
         self.qeds.edge_a_ref(e)
@@ -375,6 +335,11 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             // TODO: remove this hack
             #[cfg(not(debug_assertions))]
             return edge_target;
+            // if self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)) {
+            //     return  edge_target;
+            // }
+            // debug_assert!(dprev, edge_target);
+            assert!(!self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)));
             let dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
             debug_assert_ne!(dprev, edge_target);
             self.qeds.delete(edge_target);
@@ -386,6 +351,51 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             edge_target = oprev;
             self.add_to_quad_unchecked(edge_target, point, data)
         }
+    }
+
+    // TODO: this algorithm is still not great. Currently shown to be wrong.
+    fn add_to_boundary_unchecked(
+        &mut self,
+        mut edge_target: EdgeTarget,
+        point: Point,
+        data: T,
+    ) -> EdgeTarget {
+        let first_index = self.qeds.edge_a_ref(edge_target).sym().edge().point;
+        let new_index = self.vertices.len();
+        self.vertices.push(Segment::new(point, data));
+        let mut base = self.qeds.make_edge_with_a(first_index, new_index).target();
+        // assert_eq!()
+        self.qeds.splice(base, edge_target.sym());
+        {
+            let base_ref = self.connect(edge_target.sym(), base.sym());
+            edge_target = base_ref.oprev().target();
+            base = base_ref.target();
+
+            let base_ref = self.connect(edge_target, base.sym());
+            // edge_target = base_ref.onext().target();
+            base = base_ref.target();
+        }
+        debug_assert_eq!(
+            self.vertices
+                .get(self.qeds.edge_a_ref(base.sym()).edge().point)
+                .unwrap()
+                .point(),
+            point
+        );
+        // let e = self.qeds.edge_a_ref(base).oprev().target();
+        debug_assert_spaces(self);
+        self.retriangulate_suspect_edges(edge_target, point, first_index);
+        // TODO: remove this.
+        self.retriangulate_all();
+        assert_eq!(0, self.retriangulate_all());
+        // self.retriangulate_all();
+        // for fail in self.fail_del_test() {
+        //     eprintln!("{:?} failed del test", fail);
+        // }
+        // debug_assert_eq!(0, self.n_fail_del_test());
+        // eprintln!("inserted: {}", point);
+        // debug_assert_spaces(self);
+        base.sym()
     }
 
     /// Add a point to a specified edge. If the point lies on one of the
@@ -416,6 +426,19 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
                 self.add_point_to_edge_unchecked(edge_target, point, data)
             }
         }
+    }
+    pub fn get_matching_edge(&self, p1: Point, p2: Point) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
+        for edge in self.base_targets() {
+            let edge_ref = self.qeds.edge_a_ref(edge);
+            let segment = self.get_segment(edge_ref);
+            if segment == (p1, p2) {
+                return Some(edge_ref);
+            }
+            if segment == (p2, p1) {
+                return Some(edge_ref.sym());
+            }
+        }
+        None
     }
 }
 
@@ -493,11 +516,6 @@ impl<T: Clone> SurfaceTriangulation<T> {
     fn retriangulate_suspect_edges(&mut self, mut e: EdgeTarget, point: Point, first_i: usize) {
         // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
         loop {
-            // eprintln!(
-            //     "swap check e: {:?} {:?}",
-            //     e,
-            //     self.get_segment(self.qeds.edge_a_ref(e))
-            // );
             let t = self.qeds.edge_a_ref(e).oprev().target();
             let t_dest = self
                 .vertices
@@ -513,10 +531,8 @@ impl<T: Clone> SurfaceTriangulation<T> {
             let e_org = self.vertices.get(e_org_i).unwrap().point;
             if self.lies_right_strict(self.qeds.edge_a_ref(e), t_dest)
                 && del_test_ccw(e_org, t_dest, e_dest, point)
-                && !self.is_boundary(self.qeds.edge_a_ref(e))
+            // && !self.is_boundary(self.qeds.edge_a_ref(e))
             {
-                // TODO: make sure we don't swap a boundary
-                // eprintln!("swapping");
                 self.swap(e);
                 // assert!(self.del_test(e)||self.cocircular(e));
                 e = self.qeds.edge_a_ref(t).target();
@@ -689,6 +705,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
                     }
                 }
             } else if self.lies_left_strict(e, point) {
+                // Lies out of bounds
                 return None;
             } else {
                 break Location::OnEdge(e.sym());
@@ -1556,30 +1573,127 @@ mod tests {
 
     #[test]
     fn add_to_boundary() {
-        let vs: Vec<_> = vec![
-            Point::new(0.0, 0.0),
-            Point::new(5.0, 0.0),
-            Point::new(5.0, 5.0),
-        ];
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(2.5, -4.33);
+        let p3 = Point::new(5.0, 0.0);
+        let vs: Vec<_> = vec![p1, p2, p3];
+        let p4 = (p1 + p2) * 0.5;
+        let p5 = (p2 + p3) * 0.5;
+        let p6 = (p3 + p1) * 0.5;
+
         let mut triangulation = SurfaceTriangulation::<()>::new_with_default(vs[0], vs[1], vs[2]);
-        let p = Point::new(5.0, 2.5);
-        let location = triangulation.locate(p).unwrap();
+        {
+            let e1 = triangulation.get_matching_edge(p1, p2).unwrap();
+            let e2 = triangulation.get_matching_edge(p2, p3).unwrap();
+            let e3 = triangulation.get_matching_edge(p3, p1).unwrap();
+
+            assert_eq!(e1.onext(), e3.sym());
+            assert_eq!(e1.oprev(), e3.sym());
+            assert_eq!(e1.rot(), e2.rot().onext());
+
+            assert_eq!(e2.onext(), e1.sym());
+            assert_eq!(e2.oprev(), e1.sym());
+
+            assert_eq!(e3.onext(), e2.sym());
+            assert_eq!(e3.oprev(), e2.sym());
+        }
+        let location = triangulation.locate(p4).unwrap();
         match location {
             Location::OnEdge(edge) => {
+                eprintln!("checking is_outward_boundary");
+                assert!(!triangulation.is_outward_boundary(edge));
                 let segment = triangulation.get_segment(edge);
-                assert_eq!(segment, (vs[1], vs[2]));
+                assert_eq!(segment, (vs[0], vs[1]));
             }
             _ => panic!("wrong location"),
         }
         assert_eq!(1, triangulation.triangles().count());
-        triangulation.add_point_with_default(p);
-        assert_eq!(2, triangulation.triangles().count());
-        // triangulation.add_point_with_default(Point::new(2.0, 0.0));
+        triangulation.add_point_with_default(p4);
+        triangulation.add_point_with_default(p5);
+        triangulation.add_point_with_default(p6);
         debug_assert_spaces(&triangulation);
-        // let p = Point::new(1.875, -3.2475);
-        // assert!(location.is_some());
-        // triangulation.add_point(p, 0);
-        // debug_assert_spaces(&triangulation);
+        assert_eq!(4, triangulation.triangles().count());
+        let p7 = (p2+p5)*0.5;
+        triangulation.add_point_with_default(p7);
+        debug_assert_spaces(&triangulation);
+        {
+            let e1 = triangulation.get_matching_edge(p1, p4).unwrap();
+            let e2 = triangulation.get_matching_edge(p4, p2).unwrap();
+            let e3 = triangulation.get_matching_edge(p2, p7).unwrap();
+            let e4 = triangulation.get_matching_edge(p7, p5).unwrap();
+            let e5 = triangulation.get_matching_edge(p5, p3).unwrap();
+            let e6 = triangulation.get_matching_edge(p3, p6).unwrap();
+            let e7 = triangulation.get_matching_edge(p6, p1).unwrap();
+            let e8 = triangulation.get_matching_edge(p6, p4).unwrap();
+            let e9 = triangulation.get_matching_edge(p4, p5).unwrap();
+            let e10 = triangulation.get_matching_edge(p5, p6).unwrap();
+            let e11 = triangulation.get_matching_edge(p4, p7).unwrap();
+
+            assert_eq!(e1.onext(), e7.sym());
+            assert_eq!(e1.oprev(), e7.sym());
+            assert_eq!(e1.l_next(), e8.sym());
+            assert_eq!(e1.d_prev(), e8);
+
+            assert_eq!(e1.sym().l_next(), e7.sym());
+            assert_eq!(e1.sym().l_next().l_next(), e6.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next(), e5.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next(), e4.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next(), e3.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next(), e2.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next().l_next(), e1.sym());
+
+            assert_eq!(e2.onext(), e11);
+            assert_eq!(e2.oprev(), e1.sym());
+            assert_eq!(e2.l_next(), e3);
+            assert_eq!(e2.l_next().l_next(), e11.sym());
+
+
+            assert_eq!(e7.l_next(), e1);
+            assert_eq!(e7.l_next().l_next(), e8.sym());
+
+            // panic!("e1: {:?}",e1);
+        }
+        let p8 = (p3+p5)*0.5;
+        eprintln!("adding point: {}", p8);
+        triangulation.add_point_with_default(p8);
+        {
+            let e1 = triangulation.get_matching_edge(p1, p4).unwrap();
+            let e2 = triangulation.get_matching_edge(p4, p2).unwrap();
+            let e3 = triangulation.get_matching_edge(p2, p7).unwrap();
+            let e4 = triangulation.get_matching_edge(p7, p5).unwrap();
+            let e5 = triangulation.get_matching_edge(p5, p3).unwrap();
+            let e6 = triangulation.get_matching_edge(p3, p6).unwrap();
+            let e7 = triangulation.get_matching_edge(p6, p1).unwrap();
+            let e8 = triangulation.get_matching_edge(p6, p4).unwrap();
+            let e9 = triangulation.get_matching_edge(p4, p5).unwrap();
+            let e10 = triangulation.get_matching_edge(p5, p6).unwrap();
+            let e11 = triangulation.get_matching_edge(p4, p7).unwrap();
+
+            assert_eq!(e1.onext(), e7.sym());
+            assert_eq!(e1.oprev(), e7.sym());
+            assert_eq!(e1.l_next(), e8.sym());
+            assert_eq!(e1.d_prev(), e8);
+
+            assert_eq!(e1.sym().l_next(), e7.sym());
+            assert_eq!(e1.sym().l_next().l_next(), e6.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next(), e5.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next(), e4.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next(), e3.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next(), e2.sym());
+            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next().l_next(), e1.sym());
+
+            assert_eq!(e2.onext(), e11);
+            assert_eq!(e2.oprev(), e1.sym());
+            assert_eq!(e2.l_next(), e3);
+            assert_eq!(e2.l_next().l_next(), e11.sym());
+
+
+            assert_eq!(e7.l_next(), e1);
+            assert_eq!(e7.l_next().l_next(), e8.sym());
+
+            // panic!("e1: {:?}",e1);
+        }
+        debug_assert_spaces(&triangulation);
     }
 
     #[test]
@@ -1607,11 +1721,37 @@ mod tests {
 pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
     #[cfg(debug_assertions)]
     {
+        {
+            // Debug spokes
+            for edge in triangulation.qeds.base_edges() {
+                let vertex_index = edge.edge().point;
+                let mut current = edge;
+                let mut i = 0;
+                loop {
+                    assert_eq!(vertex_index, current.edge().point);
+                    current = current.onext();
+                    if current == edge {
+                        break;
+                    }
+                    i += 1;
+                    if i > 200 {
+                        panic!("hit iteration limit");
+                    }
+                }
+            }
+        }
         // Get all B edges.
         let mut b_targets = Vec::new();
         for (i, _quad) in triangulation.qeds.quads.iter() {
             b_targets.push(EdgeTarget::new(i, 1, 0));
             b_targets.push(EdgeTarget::new(i, 3, 0));
+        }
+        for target in triangulation.base_targets() {
+            let edge_ref = triangulation.qeds.edge_a_ref(target);
+            let segment = triangulation.get_segment(edge_ref);
+            eprintln!("edge: {}-{}", segment.0,segment.1);
+            assert_ne!(edge_ref, edge_ref.d_prev(),"d_prev is self");
+            assert_ne!(edge_ref, edge_ref.onext(),"onext is self");
         }
         // eprintln!("Checking triangles");
         for triangle in triangulation.triangles() {
