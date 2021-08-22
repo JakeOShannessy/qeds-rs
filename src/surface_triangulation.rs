@@ -104,6 +104,21 @@ pub struct SurfaceTriangulation<T> {
 }
 
 impl<T> SurfaceTriangulation<T> {
+    fn is_tri_real(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
+        let first = edge_ref;
+        let mut current = first;
+        loop {
+            // TODO: this is very inefficient, fix BData
+            if !self.curves_left(current) {
+                return false;
+            }
+            current = current.l_next();
+            if current == first {
+                break;
+            }
+        }
+        true
+    }
     fn lies_right(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> Lies {
         use Lies::*;
         let pa = self.vertices.get(edge_ref.edge().point).unwrap().point();
@@ -129,7 +144,15 @@ impl<T> SurfaceTriangulation<T> {
     }
 
     pub fn is_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
-        edge_ref.rot().edge().point == Space::Out || edge_ref.rot().sym().edge().point == Space::Out
+        // edge_ref.rot().edge().point == Space::Out || edge_ref.rot().sym().edge().point == Space::Out
+        !self.curves_left(edge_ref)
+    }
+
+    pub fn curves_left(&self, e: EdgeRefA<'_, VertexIndex, Space>) -> bool {
+        let org = self.vertices.get(e.edge().point).unwrap().point;
+        let dest = self.vertices.get(e.sym().edge().point).unwrap().point;
+        let next = self.vertices.get(e.l_next().sym().edge().point).unwrap().point;
+        is_ccw(org, dest, next)
     }
 
     pub fn lies_left_strict(
@@ -227,7 +250,7 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         let mut base = self.qeds.make_edge_with_a(first_index, new_index).target();
         self.qeds.splice(base, edge_target);
 
-        // TODO: not 100% sure this works
+        // TODO: not 100% sure this works, it would seem not. This is an unresolved part of the algorithm
         let left_b = self.qeds.edge_a_ref(base).onext().rot().edge().point;
         let right_b = self.qeds.edge_a_ref(base).oprev().sym().rot().edge().point;
 
@@ -247,6 +270,9 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
             }
         }
         let e = self.qeds.edge_a_ref(base).oprev().target();
+        // Iterate through all tries and set all CCW curves internal. TODO: this
+        // is a hack, remove it by correctly seetting space above.
+
         // this debug fails
         // eprintln!("inserted, pre retriangulate: {}", point);
         debug_assert_spaces(self);
@@ -312,13 +338,13 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         point: Point,
         data: T,
     ) -> EdgeTarget {
-        eprintln!("adding to edge");
+        // eprintln!("adding to edge");
         let is_boundary = self.is_boundary(self.qeds.edge_a_ref(edge_target));
-        eprintln!("is boundary: {}", is_boundary);
+        // eprintln!("is boundary: {}", is_boundary);
         // TODO: remove this hack
-        if is_boundary {
-            return edge_target;
-        }
+        // if is_boundary {
+        //     return edge_target;
+        // }
         let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
         self.qeds.delete(edge_target);
         edge_target = oprev;
@@ -502,18 +528,18 @@ impl<T: Clone> SurfaceTriangulation<T> {
         }
     }
 
-    fn get_outside(&self) -> Option<EdgeTarget> {
-        // Find at least one edge with an Out property.
-        for (i, quad) in self.qeds.quads.iter() {
-            if quad.edges_b[0].point == Space::Out {
-                return Some(EdgeTarget::new(i, 1, 0));
-            }
-            if quad.edges_b[1].point == Space::Out {
-                return Some(EdgeTarget::new(i, 3, 0));
-            }
-        }
-        None
-    }
+    // fn get_outside(&self) -> Option<EdgeTarget> {
+    //     // Find at least one edge with an Out property.
+    //     for (i, quad) in self.qeds.quads.iter() {
+    //         if quad.edges_b[0].point == Space::Out {
+    //             return Some(EdgeTarget::new(i, 1, 0));
+    //         }
+    //         if quad.edges_b[1].point == Space::Out {
+    //             return Some(EdgeTarget::new(i, 3, 0));
+    //         }
+    //     }
+    //     None
+    // }
 
     pub fn neighbouring_points<'a>(
         &'a self,
@@ -572,7 +598,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 // );
                 e = e.sym();
             } else {
-                let has_left_face = e.rot().sym().edge().point == Space::In;
+                let has_left_face = self.curves_left(e);
                 if has_left_face {
                     // eprintln!("e HasLeftFace: {:?}", has_left_face);
                     #[allow(clippy::collapsible_else_if)]
@@ -877,7 +903,7 @@ impl<'a, T> Iterator for RawTriangleIter<'a, T> {
             if self.triangulation.qeds.quads.contains(self.next.e) {
                 let edge_ref = { self.triangulation.qeds.edge_a_ref(self.next) };
                 self.inc();
-                if edge_ref.is_tri_canonical() && edge_ref.is_tri_real() {
+                if edge_ref.is_tri_canonical() && self.triangulation.is_tri_real(edge_ref) {
                     break Some(edge_ref);
                 }
             } else {
@@ -1081,25 +1107,6 @@ impl<'a> EdgeRefA<'a, VertexIndex, Space> {
         let next_e = next_edge.target().e;
         let second_e = next_edge.onext().target().e;
         (current_e < next_e) && (current_e < second_e)
-    }
-
-    fn is_tri_real(&self) -> bool {
-        let first = self.target().sym().rot();
-        let mut current = first;
-        loop {
-            // TODO: this is very inefficient, fix BData
-            let edge = { self.qeds.edge_b_ref(current) };
-            if edge.edge().point == Space::Out {
-                return false;
-            }
-            current = edge.oprev().target();
-            if current == first {
-                break;
-            }
-        }
-        // for edge in self.l_face().edges {
-        // }
-        true
     }
 
     pub fn get_tri_canonical(&self) -> Self {
@@ -1436,6 +1443,23 @@ mod tests {
     }
 
     #[test]
+    fn troublesome_insertion_4() {
+        let v1 = Point::new(0.0, 0.0);
+        let v2 = Point::new(2.5, -4.33);
+        let v3 = Point::new(5.0, 0.0);
+        let vs: Vec<_> = vec![].into_iter().map(|(x, y)| Point::new(x, y)).collect();
+        let mut triangulation = SurfaceTriangulation::new((v1, ()), (v2, ()), (v3, ()));
+        triangulation.add_point((v1 + v2) * 0.5, ());
+        triangulation.add_point((v2 + v3) * 0.5, ());
+        triangulation.add_point((v3 + v1) * 0.5, ());
+        // for point in vs {
+        //     triangulation.add_point(point, ());
+        // }
+        debug_assert_spaces(&triangulation);
+        eprintln!("n_triangles: {}", triangulation.triangles().count());
+    }
+
+    #[test]
     fn out_of_bounds() {
         // TODO: this test may need fixing
         let vs: Vec<_> = vec![(0.0, 0.0), (2.5, -4.33), (5.0, 0.0)]
@@ -1533,12 +1557,14 @@ pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
     }
     // eprintln!("Checking triangles");
     for triangle in triangulation.triangles() {
-        // eprintln!(
-        //     "{}-{}-{}",
-        //     triangle.0.point, triangle.1.point, triangle.2.point
-        // );
         let ccw =
             crate::triangulation::is_ccw(triangle.0.point, triangle.1.point, triangle.2.point);
+        if !ccw {
+            eprintln!(
+                "{}-{}-{}",
+                triangle.0.point, triangle.1.point, triangle.2.point
+            );
+        }
         assert!(ccw);
     }
 }
