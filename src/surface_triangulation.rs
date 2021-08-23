@@ -1613,7 +1613,7 @@ mod tests {
         triangulation.add_point_with_default(p6);
         debug_assert_spaces(&triangulation);
         assert_eq!(4, triangulation.triangles().count());
-        let p7 = (p2+p5)*0.5;
+        let p7 = (p2 + p5) * 0.5;
         triangulation.add_point_with_default(p7);
         debug_assert_spaces(&triangulation);
         {
@@ -1638,22 +1638,43 @@ mod tests {
             assert_eq!(e1.sym().l_next().l_next(), e6.sym());
             assert_eq!(e1.sym().l_next().l_next().l_next(), e5.sym());
             assert_eq!(e1.sym().l_next().l_next().l_next().l_next(), e4.sym());
-            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next(), e3.sym());
-            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next(), e2.sym());
-            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next().l_next(), e1.sym());
+            assert_eq!(
+                e1.sym().l_next().l_next().l_next().l_next().l_next(),
+                e3.sym()
+            );
+            assert_eq!(
+                e1.sym()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next(),
+                e2.sym()
+            );
+            assert_eq!(
+                e1.sym()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next(),
+                e1.sym()
+            );
 
             assert_eq!(e2.onext(), e11);
             assert_eq!(e2.oprev(), e1.sym());
             assert_eq!(e2.l_next(), e3);
             assert_eq!(e2.l_next().l_next(), e11.sym());
 
-
             assert_eq!(e7.l_next(), e1);
             assert_eq!(e7.l_next().l_next(), e8.sym());
 
             // panic!("e1: {:?}",e1);
         }
-        let p8 = (p3+p5)*0.5;
+        let p8 = (p3 + p5) * 0.5;
         eprintln!("adding point: {}", p8);
         triangulation.add_point_with_default(p8);
         {
@@ -1678,15 +1699,36 @@ mod tests {
             assert_eq!(e1.sym().l_next().l_next(), e6.sym());
             assert_eq!(e1.sym().l_next().l_next().l_next(), e5.sym());
             assert_eq!(e1.sym().l_next().l_next().l_next().l_next(), e4.sym());
-            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next(), e3.sym());
-            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next(), e2.sym());
-            assert_eq!(e1.sym().l_next().l_next().l_next().l_next().l_next().l_next().l_next(), e1.sym());
+            assert_eq!(
+                e1.sym().l_next().l_next().l_next().l_next().l_next(),
+                e3.sym()
+            );
+            assert_eq!(
+                e1.sym()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next(),
+                e2.sym()
+            );
+            assert_eq!(
+                e1.sym()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next()
+                    .l_next(),
+                e1.sym()
+            );
 
             assert_eq!(e2.onext(), e11);
             assert_eq!(e2.oprev(), e1.sym());
             assert_eq!(e2.l_next(), e3);
             assert_eq!(e2.l_next().l_next(), e11.sym());
-
 
             assert_eq!(e7.l_next(), e1);
             assert_eq!(e7.l_next().l_next(), e8.sym());
@@ -1749,9 +1791,9 @@ pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
         for target in triangulation.base_targets() {
             let edge_ref = triangulation.qeds.edge_a_ref(target);
             let segment = triangulation.get_segment(edge_ref);
-            eprintln!("edge: {}-{}", segment.0,segment.1);
-            assert_ne!(edge_ref, edge_ref.d_prev(),"d_prev is self");
-            assert_ne!(edge_ref, edge_ref.onext(),"onext is self");
+            eprintln!("edge: {}-{}", segment.0, segment.1);
+            assert_ne!(edge_ref, edge_ref.d_prev(), "d_prev is self");
+            assert_ne!(edge_ref, edge_ref.onext(), "onext is self");
         }
         // eprintln!("Checking triangles");
         for triangle in triangulation.triangles() {

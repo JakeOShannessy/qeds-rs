@@ -569,14 +569,14 @@ impl ConstrainedTriangulation {
         Some(&self.qeds)
     }
 
-    pub fn some_edge_a(&self) -> Option<EdgeRefA<'_,Segment, ()>> {
+    pub fn some_edge_a(&self) -> Option<EdgeRefA<'_, Segment, ()>> {
         let (i, _) = self.qeds.quads.iter().next()?;
         Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0)))
     }
 
     // TODO: This has not yet been proved to be stable. It may also loop
     // inifintely, particularly with constrianed triangulations.
-    pub fn locate(&self, point: Point) -> Option<EdgeRefA<'_,Segment, ()>> {
+    pub fn locate(&self, point: Point) -> Option<EdgeRefA<'_, Segment, ()>> {
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
         let mut rng = rand::thread_rng();
@@ -1138,7 +1138,6 @@ impl ConstrainedTriangulation {
             iterations += 1;
         }
     }
-
 
     /// Warning: this is very inefficient and just for testing.
     fn retriangulate_all_single_pass(&mut self) -> usize {

@@ -424,7 +424,7 @@ impl Triangulation {
         &mut self,
         boundary_edge: EdgeTarget,
         p: Point,
-    ) -> (EdgeRefA<'_,Point, ()>, EdgeRefA<'_,Point, ()>) {
+    ) -> (EdgeRefA<'_, Point, ()>, EdgeRefA<'_, Point, ()>) {
         let dest = self.qeds.edge_a_ref(boundary_edge).sym().edge().point;
         let e = self.qeds.make_edge_with_a(p, dest).target();
         self.qeds.splice(e.sym(), boundary_edge.sym());

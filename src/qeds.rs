@@ -173,7 +173,11 @@ impl<AData, BData> Qeds<AData, BData> {
 impl<AData: Clone, BData: Default> Qeds<AData, BData> {
     /// Connect the Org of a with the Dest of b by creating a new edge. TODO: we
     /// need to special case infinite edges.
-    pub fn connect(&mut self, edge_a: EdgeTarget, edge_b: EdgeTarget) -> EdgeRefA<'_, AData, BData> {
+    pub fn connect(
+        &mut self,
+        edge_a: EdgeTarget,
+        edge_b: EdgeTarget,
+    ) -> EdgeRefA<'_, AData, BData> {
         // First, make the new edge.
         // Set the Org of e to the Dest of a
         let p1 = self.edge_a(edge_a.sym()).point.clone();
