@@ -1530,9 +1530,6 @@ mod tests {
         triangulation.add_point((v1 + v2) * 0.5, ());
         triangulation.add_point((v2 + v3) * 0.5, ());
         triangulation.add_point((v3 + v1) * 0.5, ());
-        // for point in vs {
-        //     triangulation.add_point(point, ());
-        // }
         debug_assert_spaces(&triangulation);
         eprintln!("n_triangles: {}", triangulation.triangles().count());
     }
@@ -1551,7 +1548,6 @@ mod tests {
             "{:?}",
             location.map(|x| triangulation.get_segment(x.edge()))
         );
-        // assert_eq!(None, location);
         debug_assert_spaces(&triangulation);
     }
 
@@ -1671,11 +1667,22 @@ mod tests {
 
             assert_eq!(e7.l_next(), e1);
             assert_eq!(e7.l_next().l_next(), e8.sym());
-
-            // panic!("e1: {:?}",e1);
         }
         let p8 = (p3 + p5) * 0.5;
         eprintln!("adding point: {}", p8);
+        let location = triangulation.locate(p8).unwrap();
+        {
+            let e = triangulation.get_matching_edge(p3, p5).unwrap();
+            eprintln!("e: {:?}", e);
+            eprintln!("e.sym(): {:?}", e.sym(),);
+            eprintln!("location.edge(): {:?}", location.edge());
+            eprintln!(
+                "specified: {:?} found: {:?}",
+                p8,
+                triangulation.get_segment(e)
+            );
+            assert_eq!(e, location.edge(), "p8 located on wrong edge");
+        }
         triangulation.add_point_with_default(p8);
         {
             let e1 = triangulation.get_matching_edge(p1, p4).unwrap();
