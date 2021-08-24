@@ -287,11 +287,18 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
     /// The edge this returns should always have the added point at its origin.
     /// It should not result in non-CCW triangles.
     pub fn add_point(&mut self, mut point: Point, data: T) -> Option<EdgeTarget> {
+        self.add_point_raw(point, data, false)
+    }
+
+    pub fn add_point_force(&mut self, mut point: Point, data: T) -> Option<EdgeTarget> {
+        self.add_point_raw(point, data, true)
+    }
+    fn add_point_raw(&mut self, mut point: Point, data: T, force: bool) -> Option<EdgeTarget> {
         point.snap();
         self.update_bounds(point);
         debug_assert_spaces(self);
         // assert_eq!(0, self.retriangulate_all());
-        match self.locate(point)? {
+        match self.locate_raw(point, force)? {
             Location::OnPoint(edge) => Some(edge.target()),
             Location::OnEdge(edge) => {
                 let target = edge.target();
@@ -333,13 +340,13 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         // TODO: the insertion algorithm doesn't properly handle edge cases.
         if is_boundary {
             // TODO: remove this hack
-            #[cfg(not(debug_assertions))]
-            return edge_target;
+            // #[cfg(not(debug_assertions))]
+            // return edge_target;
             // if self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)) {
             //     return  edge_target;
             // }
             // debug_assert!(dprev, edge_target);
-            assert!(!self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)));
+            // assert!(!self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)));
             let dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
             debug_assert_ne!(dprev, edge_target);
             self.qeds.delete(edge_target);
@@ -632,8 +639,16 @@ impl<T: Clone> SurfaceTriangulation<T> {
         neighbouring_refs
     }
 
-    // TODO: This algorithm is known to fail in non-Delaunay triangulations.
     pub fn locate(&self, mut point: Point) -> Option<Location<'_>> {
+        self.locate_raw(point, false)
+    }
+
+    pub fn locate_force(&self, mut point: Point) -> Option<Location<'_>> {
+        self.locate_raw(point, true)
+    }
+
+    // TODO: This algorithm is known to fail in non-Delaunay triangulations.
+    fn locate_raw(&self, mut point: Point, force: bool) -> Option<Location<'_>> {
         point.snap();
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
@@ -652,6 +667,13 @@ impl<T: Clone> SurfaceTriangulation<T> {
                 // panic!("locating failed for: {}", point);
                 return None;
             }
+            if point == self.vertices.get(e.edge().point).unwrap().point {
+                break Location::OnPoint(e);
+            } else if point == self.vertices.get(e.sym().edge().point).unwrap().point {
+                // If we lie on the eDest, return eSym(). This is a departure
+                // from the paper which just returns e.
+                break Location::OnPoint(e.sym());
+            }
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
             let onext_first: bool = rng.gen();
@@ -669,30 +691,26 @@ impl<T: Clone> SurfaceTriangulation<T> {
                     // Is out of bounds
                     return None;
                 } else {
-                    // Somehow we need to find the right edge
+                    // Find the right edge
                     let mut boundary_edge = e;
                     loop {
-                        let (p1,p2) = self.get_segment(boundary_edge);
-                        let edge_length_23 = p1.distance(p2)*(2.0/3.0);
+                        let (p1, p2) = self.get_segment(boundary_edge);
+                        let edge_length = p1.distance(p2);
                         let p1d = p1.distance(point);
                         let p2d = p2.distance(point);
-                        if p1d < edge_length_23 && p2d < edge_length_23 {
+                        if (p1d + p2d - edge_length).abs() < edge_length * 0.001 {
                             return Some(Location::OnEdge(boundary_edge.sym()));
                         }
                         boundary_edge = boundary_edge.l_next();
                         if boundary_edge == e {
+                            // If we've looped all the way around, we can't
+                            // find a match and return None.
                             return None;
                         }
                     }
                 }
             }
-            if point == self.vertices.get(e.edge().point).unwrap().point {
-                break Location::OnPoint(e);
-            } else if point == self.vertices.get(e.sym().edge().point).unwrap().point {
-                // If we lie on the eDest, return eSym(). This is a departure
-                // from the paper which just returns e.
-                break Location::OnPoint(e.sym());
-            } else if self.lies_right_strict(e, point) {
+            if self.lies_right_strict(e, point) {
                 // eprintln!(
                 //     "point {} lies strictly right of {}-{}",
                 //     point, segment.0, segment.1
@@ -1691,7 +1709,7 @@ mod tests {
         }
         let p8 = (p3 + p5) * 0.5;
         eprintln!("adding point: {}", p8);
-        let location = triangulation.locate(p8).unwrap();
+        let location = triangulation.locate_force(p8).unwrap();
         {
             let e = triangulation.get_matching_edge(p3, p5).unwrap();
             eprintln!("e: {:?}", e);
@@ -1710,65 +1728,6 @@ mod tests {
             assert_eq!(e, location.edge(), "p8 located on wrong edge");
         }
         triangulation.add_point_with_default(p8);
-        debug_assert_spaces(&triangulation);
-        // {
-        //     let e1 = triangulation.get_matching_edge(p1, p4).unwrap();
-        //     let e2 = triangulation.get_matching_edge(p4, p2).unwrap();
-        //     let e3 = triangulation.get_matching_edge(p2, p7).unwrap();
-        //     let e4 = triangulation.get_matching_edge(p7, p5).unwrap();
-        //     let e5 = triangulation.get_matching_edge(p5, p3).unwrap();
-        //     let e6 = triangulation.get_matching_edge(p3, p6).unwrap();
-        //     let e7 = triangulation.get_matching_edge(p6, p1).unwrap();
-        //     let e8 = triangulation.get_matching_edge(p6, p4).unwrap();
-        //     let e9 = triangulation.get_matching_edge(p4, p5).unwrap();
-        //     let e10 = triangulation.get_matching_edge(p5, p6).unwrap();
-        //     let e11 = triangulation.get_matching_edge(p4, p7).unwrap();
-
-        //     assert_eq!(e1.onext(), e7.sym());
-        //     assert_eq!(e1.oprev(), e7.sym());
-        //     assert_eq!(e1.l_next(), e8.sym());
-        //     assert_eq!(e1.d_prev(), e8);
-
-        //     assert_eq!(e1.sym().l_next(), e7.sym());
-        //     assert_eq!(e1.sym().l_next().l_next(), e6.sym());
-        //     assert_eq!(e1.sym().l_next().l_next().l_next(), e5.sym());
-        //     assert_eq!(e1.sym().l_next().l_next().l_next().l_next(), e4.sym());
-        //     assert_eq!(
-        //         e1.sym().l_next().l_next().l_next().l_next().l_next(),
-        //         e3.sym()
-        //     );
-        //     assert_eq!(
-        //         e1.sym()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next(),
-        //         e2.sym()
-        //     );
-        //     assert_eq!(
-        //         e1.sym()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next()
-        //             .l_next(),
-        //         e1.sym()
-        //     );
-
-        //     assert_eq!(e2.onext(), e11);
-        //     assert_eq!(e2.oprev(), e1.sym());
-        //     assert_eq!(e2.l_next(), e3);
-        //     assert_eq!(e2.l_next().l_next(), e11.sym());
-
-        //     assert_eq!(e7.l_next(), e1);
-        //     assert_eq!(e7.l_next().l_next(), e8.sym());
-
-        //     // panic!("e1: {:?}",e1);
-        // }
         debug_assert_spaces(&triangulation);
     }
 
