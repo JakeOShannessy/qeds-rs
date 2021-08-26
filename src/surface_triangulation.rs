@@ -7,6 +7,10 @@ use crate::triangulation::is_ccw;
 use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
 use std::marker::PhantomData;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicUsize;
+
+use serde::{Deserialize, Serialize};
 
 pub fn edge_from_target<T: Clone>(
     target: EdgeTarget,
@@ -71,7 +75,7 @@ impl From<NodeTarget> for EdgeTarget {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Segment<T> {
     /// The point at the origin of this edge.
     pub point: Point,
@@ -93,7 +97,7 @@ impl<T> HasPoint for Segment<T> {
 /// An offset into the vertices vector.
 pub type VertexIndex = usize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// A Qeds data structure specialised to a 2d triangulation.
 pub struct SurfaceTriangulation<T> {
     /// The quad-edge data structure we use as the basis for the triangulation.
@@ -103,6 +107,137 @@ pub struct SurfaceTriangulation<T> {
     pub bounds: Option<(Point, Point)>,
 }
 
+impl<T: Serialize> SurfaceTriangulation<T> {
+    pub fn debug_table(&self) -> String {
+        use prettytable::*;
+        use prettytable::{row, Cell, Row, Table};
+        // Create the table
+        let mut table = Table::new();
+        fn to_letter(i: usize) -> char {
+            char::from_u32((b'a' + ((i%26) as u8)).into()).unwrap()
+        }
+
+        let mut headers = Row::empty();
+        headers.add_cell(Cell::new("-"));
+        let mut next = Row::empty();
+        next.add_cell(Cell::new("next"));
+        let mut rot_next = Row::empty();
+        rot_next.add_cell(Cell::new("Rot.next"));
+        let mut sym_next = Row::empty();
+        sym_next.add_cell(Cell::new("Sym.next"));
+        let mut sym_rot_next = Row::empty();
+        sym_rot_next.add_cell(Cell::new("SymRot.next"));
+        let mut org = Row::empty();
+        org.add_cell(Cell::new("org"));
+        let mut dest = Row::empty();
+        dest.add_cell(Cell::new("dest"));
+        for (i, quad) in self.qeds.quads.iter() {
+            headers.add_cell(Cell::new(&format!("{}", to_letter(i))));
+            {
+                let target = quad.edges_a[0].next;
+                let mut s = format!("{}", to_letter(target.e));
+                if target.r == 1 {
+                    s.push_str("Rot")
+                } else if target.r == 2 {
+                    s.push_str("Sym")
+                } else if target.r == 3 {
+                    s.push_str("SymRot")
+                }
+                next.add_cell(Cell::new(&s));
+            }
+            {
+                let target = quad.edges_b[0].next;
+                let mut s = format!("{}", to_letter(target.e));
+                if target.r == 1 {
+                    s.push_str("Rot")
+                } else if target.r == 2 {
+                    s.push_str("Sym")
+                } else if target.r == 3 {
+                    s.push_str("SymRot")
+                }
+                rot_next.add_cell(Cell::new(&s));
+            }
+            {
+                let target = quad.edges_a[1].next;
+                let mut s = format!("{}", to_letter(target.e));
+                if target.r == 1 {
+                    s.push_str("Rot")
+                } else if target.r == 2 {
+                    s.push_str("Sym")
+                } else if target.r == 3 {
+                    s.push_str("SymRot")
+                }
+                sym_next.add_cell(Cell::new(&s));
+            }
+            {
+                let target = quad.edges_b[1].next;
+                let mut s = format!("{}", to_letter(target.e));
+                if target.r == 1 {
+                    s.push_str("Rot")
+                } else if target.r == 2 {
+                    s.push_str("Sym")
+                } else if target.r == 3 {
+                    s.push_str("SymRot")
+                }
+                sym_rot_next.add_cell(Cell::new(&s));
+            }
+            org.add_cell(Cell::new(&format!("P{}",quad.edges_a[0].point)));
+            dest.add_cell(Cell::new(&format!("P{}",quad.edges_a[1].point)));
+        }
+        table.add_row(headers);
+        table.add_row(next);
+        table.add_row(rot_next);
+        table.add_row(sym_next);
+        table.add_row(sym_rot_next);
+        table.add_row(org);
+        table.add_row(dest);
+        let mut edge_table = table.to_string();
+        let points_table = self.debug_points_table();
+        edge_table.push_str("\n");
+        edge_table.push_str(&points_table);
+        edge_table
+    }
+    pub fn debug_points_table(&self) -> String {
+        use prettytable::*;
+        use prettytable::{row, Cell, Row, Table};
+        // Create the table
+        let mut table = Table::new();
+        fn to_letter(i: usize) -> char {
+            char::from_u32((b'a' + ((i%26) as u8)).into()).unwrap()
+        }
+
+        let mut headers = Row::empty();
+        headers.add_cell(Cell::new("Name"));
+        headers.add_cell(Cell::new("Point"));
+        table.add_row(headers);
+        for (i, segment) in self.vertices.iter().enumerate() {
+            let mut point_row = Row::empty();
+            point_row.add_cell(Cell::new(&format!("P{}", i)));
+            point_row.add_cell(Cell::new(&format!("{}", segment.point)));
+            table.add_row(point_row);
+        }
+        table.to_string()
+    }
+    pub fn debug_dump(&self, msg: Option<&str>) {
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let old_n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // Only do this the first 20 times, and don't do it during tests
+        #[cfg(not(test))]
+        if old_n < 20 {
+            let js = serde_json::to_string_pretty(self).unwrap();
+            let table = self.debug_table();
+            // let filename = if old_n % 2 == 0 { "a.json" } else { "b.json" };
+            let filename = if let Some(msg) = msg {
+                format!("{} - {}", old_n, msg)
+            } else {
+                format!("{}", old_n)
+            };
+            eprintln!("outputting: {}", filename);
+            std::fs::write(format!("{}.json", filename), js).unwrap();
+            std::fs::write(format!("{}.txt", filename), table).unwrap();
+        }
+    }
+}
 impl<T> SurfaceTriangulation<T> {
     fn is_tri_real(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
         let first = edge_ref;
@@ -235,8 +370,8 @@ impl<T> SurfaceTriangulation<T> {
     }
 }
 
-impl<T: Default + Clone> SurfaceTriangulation<T> {
-    fn add_to_quad_unchecked(
+impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
+    pub fn add_to_quad_unchecked(
         &mut self,
         mut edge_target: EdgeTarget,
         point: Point,
@@ -333,24 +468,16 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
     ) -> EdgeTarget {
         // eprintln!("adding to edge");
         let is_boundary = self.is_boundary(self.qeds.edge_a_ref(edge_target));
+        // let is_boundary = false;
         // eprintln!("is boundary: {}", is_boundary);
         // if is_boundary {
         //     edge_target = edge_target.sym();
         // }
         // TODO: the insertion algorithm doesn't properly handle edge cases.
         if is_boundary {
-            // TODO: remove this hack
-            // #[cfg(not(debug_assertions))]
-            // return edge_target;
-            // if self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)) {
-            //     return  edge_target;
-            // }
-            // debug_assert!(dprev, edge_target);
-            // assert!(!self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)));
-            let dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
-            debug_assert_ne!(dprev, edge_target);
-            self.qeds.delete(edge_target);
-            edge_target = dprev;
+            if self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)) {
+                edge_target = edge_target.sym();
+            }
             self.add_to_boundary_unchecked(edge_target, point, data)
         } else {
             let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
@@ -366,34 +493,51 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         point: Point,
         data: T,
     ) -> EdgeTarget {
-        let first_index = self.qeds.edge_a_ref(edge_target).sym().edge().point;
+        debug_assert_spaces(self);
+        let x_onext = self.qeds.edge_a_ref(edge_target).onext().target();
+        let x_dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
+        debug_assert_ne!(x_onext, edge_target);
+        debug_assert_ne!(x_dprev, edge_target);
+        // let dia_a_indices = self.get_segment_indices(self.qeds.edge_a_ref(edge_target).d_prev().sym());
+        self.debug_dump(Some("Before delete"));
+        self.qeds.delete(edge_target);
+        self.debug_dump(Some("Delete[c]"));
+        // let dia_c = self.qeds.edge_a_ref(edge_target);
+        // let dia_a = dia_c.sym().onext().target();
+        // let dia_e = dia_c.l_next().target();
+        // assert_eq!(dia_e,dia_a.sym());
+        // edge_target = onext;
+
+        let first_index = self.qeds.edge_a_ref(x_onext).edge().point;
+        eprintln!("first index: {}", first_index);
         let new_index = self.vertices.len();
         self.vertices.push(Segment::new(point, data));
         let mut base = self.qeds.make_edge_with_a(first_index, new_index).target();
         // assert_eq!()
-        self.qeds.splice(base, edge_target.sym());
+        self.debug_dump(Some("MakeEdge"));
+        self.qeds.splice(base, x_onext);
+        self.debug_dump(Some("Splice[d,c.Dprev]"));
         {
-            let base_ref = self.connect(edge_target.sym(), base.sym());
-            edge_target = base_ref.oprev().target();
-            base = base_ref.target();
-
-            let base_ref = self.connect(edge_target, base.sym());
+            let base_ref = self.connect(base,x_onext.sym());
+            let base_sym = base_ref.target().sym();
+            self.debug_dump(Some("Connect[c.Dprev.Sym,d]"));
+            let base_ref = self.connect(base_sym,x_dprev.sym());
+            self.debug_dump(Some("Connect[e.Oprev.Sym,e.Sym]"));
             // edge_target = base_ref.onext().target();
-            base = base_ref.target();
         }
-        debug_assert_eq!(
-            self.vertices
-                .get(self.qeds.edge_a_ref(base.sym()).edge().point)
-                .unwrap()
-                .point(),
-            point
-        );
+        // debug_assert_eq!(
+        //     self.vertices
+        //         .get(self.qeds.edge_a_ref(base.sym()).edge().point)
+        //         .unwrap()
+        //         .point(),
+        //     point
+        // );
         // let e = self.qeds.edge_a_ref(base).oprev().target();
         debug_assert_spaces(self);
-        self.retriangulate_suspect_edges(edge_target, point, first_index);
+        // self.retriangulate_suspect_edges(edge_target, point, first_index);
         // TODO: remove this.
         self.retriangulate_all();
-        assert_eq!(0, self.retriangulate_all());
+        // assert_eq!(0, self.retriangulate_all());
         // self.retriangulate_all();
         // for fail in self.fail_del_test() {
         //     eprintln!("{:?} failed del test", fail);
@@ -432,6 +576,25 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
                 self.add_point_to_edge_unchecked(edge_target, point, data)
             }
         }
+    }
+    pub fn get_matching_edge_indices(
+        &self,
+        i1: VertexIndex,
+        i2: VertexIndex,
+    ) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
+        for edge in self.base_targets() {
+            let edge_ref = self.qeds.edge_a_ref(edge);
+            let edge_ref_sym = self.qeds.edge_a_ref(edge.sym());
+            let x1 = edge_ref.edge().point;
+            let x2 = edge_ref_sym.edge().point;
+            if [x1, x2] == [i1, i2] {
+                return Some(edge_ref);
+            }
+            if [x1, x2] == [i2, i1] {
+                return Some(edge_ref_sym);
+            }
+        }
+        None
     }
     pub fn get_matching_edge(&self, p1: Point, p2: Point) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
         for edge in self.base_targets() {
@@ -931,9 +1094,12 @@ impl<T> SurfaceTriangulation<T> {
         cocircular(a, b, c, d)
     }
     pub fn get_segment(&self, edge: EdgeRefA<'_, VertexIndex, ()>) -> (Point, Point) {
-        let p1 = self.vertices.get(edge.edge().point).unwrap().point;
-        let p2 = self.vertices.get(edge.sym().edge().point).unwrap().point;
-        debug_assert_ne!(p1, p2);
+        let i1 = edge.edge().point;
+        let i2 = edge.sym().edge().point;
+        debug_assert_ne!(i1, i2);
+        let p1 = self.vertices.get(i1).unwrap().point;
+        let p2 = self.vertices.get(i2).unwrap().point;
+        // debug_assert_ne!(p1, p2);
         (p1, p2)
     }
     /// Test whether an edge is the diagonal of a concave quad.
@@ -1607,6 +1773,42 @@ mod tests {
     }
 
     #[test]
+    fn split_edges() {
+        let vs: Vec<_> = vec![(0.0, 0.0), (5.0, 0.0), (5.0, 5.0)]
+            .into_iter()
+            .map(|(x, y)| Point::new(x, y))
+            .collect();
+        let mut triangulation = SurfaceTriangulation::<()>::new_with_default(vs[0], vs[1], vs[2]);
+        debug_assert_spaces(&triangulation);
+        let mut next = None;
+        'the_loop: loop {
+            if let Some((edge, midpoint)) = next {
+                let (p1, p2) = triangulation.get_segment(triangulation.qeds.edge_a_ref(edge));
+                eprintln!("adding {} to {}-{}", midpoint, p1, p2);
+                triangulation.add_point_to_edge(edge, midpoint, ());
+            }
+            for edge in triangulation.base_targets() {
+                let e = triangulation.qeds.edge_a_ref(edge);
+                let (p1, p2) = triangulation.get_segment(e);
+                let d = p1.distance(p2);
+                if d > 1.0 && !triangulation.is_boundary(e) {
+                    let midpoint = (p1 + p2) * 0.5;
+                    next = Some((edge, midpoint));
+                    continue 'the_loop;
+                }
+            }
+            break;
+        }
+        // triangulation.add_point(Point::new(1.25, -2.165), 0);
+        // let p = Point::new(1.875, -3.2475);
+        // let location = triangulation.locate(p);
+        // assert!(location.is_some());
+        // triangulation.add_point(p, 0);
+        // debug_assert_spaces(&triangulation);
+    }
+
+    #[ignore]
+    #[test]
     fn add_to_boundary() {
         let p1 = Point::new(0.0, 0.0);
         let p2 = Point::new(2.5, -4.33);
@@ -1750,12 +1952,80 @@ mod tests {
         assert!(triangulation.locate(v4).is_none());
         // triangulation.add_point(v4, 0, true);
     }
+
+    #[test]
+    fn t10() {
+        // use qeds::point::Point;
+        let points = vec![
+            Point {
+                x: -17.870000839231405,
+                y: 2.7686743613015225e-6,
+            },
+            Point {
+                x: -4.218110561368454,
+                y: -15.000001861413416,
+            },
+            Point {
+                x: -4.218110561370102,
+                y: -2.1966163308234274e-6,
+            },
+            Point {
+                x: -11.04405570029993,
+                y: -7.499999546369527,
+            },
+            Point {
+                x: -7.631083130834192,
+                y: -11.250000703891471,
+            },
+        ];
+        let mut triangulation =
+            SurfaceTriangulation::<()>::new_with_default(points[0], points[1], points[2]);
+        debug_assert_spaces(&triangulation);
+        {
+            for edge in triangulation.base_targets() {
+                let (p1, p2) = triangulation.get_segment(triangulation.qeds.edge_a_ref(edge));
+                eprintln!("edge_distance: {}", p1.distance(p2));
+            }
+            // panic!("end");
+        }
+        {
+            let edge = triangulation.get_matching_edge_indices(0, 1).unwrap();
+            let edge_target = edge.target();
+            let (p1, p2) = triangulation.get_segment(edge);
+            assert!(p1.distance(p2) > 11.0);
+            let midpoint = p1.midpoint(p2);
+            triangulation.add_point_to_edge(edge_target, midpoint, ());
+            debug_assert_spaces(&triangulation);
+        }
+        {
+            let edge = triangulation.get_matching_edge_indices(1, 2).unwrap();
+            let edge_target = edge.target();
+            let (p1, p2) = triangulation.get_segment(edge);
+            assert!(p1.distance(p2) > 11.0);
+            let midpoint = p1.midpoint(p2);
+            triangulation.add_point_to_edge(edge_target, midpoint, ());
+            debug_assert_spaces(&triangulation);
+        }
+        {
+            let edge = triangulation.get_matching_edge_indices(2, 0).unwrap();
+            let edge_target = edge.target();
+            let (p1, p2) = triangulation.get_segment(edge);
+            assert!(p1.distance(p2) > 11.0);
+            let midpoint = p1.midpoint(p2);
+            triangulation.add_point_to_edge(edge_target, midpoint, ());
+            debug_assert_spaces(&triangulation);
+        }
+        // triangulation.add_point(points[4], ());
+        debug_assert_spaces(&triangulation);
+        // assert_eq!(4, triangulation.triangles().count());
+    }
 }
 
 /// Assert that every node as a component.
-pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
+pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangulation<T>) {
     #[cfg(debug_assertions)]
     {
+        triangulation.debug_dump(None);
         {
             // Debug spokes
             for edge in triangulation.qeds.base_edges() {
@@ -1769,7 +2039,7 @@ pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
                         break;
                     }
                     i += 1;
-                    if i > 200 {
+                    if i > 2000 {
                         panic!("hit iteration limit");
                     }
                 }
