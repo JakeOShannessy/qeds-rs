@@ -2045,6 +2045,11 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
                 }
             }
         }
+        {
+            for (i, quad) in triangulation.qeds.quads.iter() {
+                assert_ne!(quad.edges_a[0].point,quad.edges_a[1].point);
+            }
+        }
         // Get all B edges.
         let mut b_targets = Vec::new();
         for (i, _quad) in triangulation.qeds.quads.iter() {
