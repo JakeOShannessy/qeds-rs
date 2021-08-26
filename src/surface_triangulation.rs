@@ -233,8 +233,8 @@ impl<T: Serialize> SurfaceTriangulation<T> {
                 format!("{}", old_n)
             };
             eprintln!("outputting: {}", filename);
-            std::fs::write(format!("{}.json", filename), js).unwrap();
-            std::fs::write(format!("{}.txt", filename), table).unwrap();
+            std::fs::write(format!("{}.affrad_debug.json", filename), js).unwrap();
+            std::fs::write(format!("{}.affrad_debug.txt", filename), table).unwrap();
         }
     }
 }
