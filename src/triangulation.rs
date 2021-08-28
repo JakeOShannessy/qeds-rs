@@ -137,6 +137,17 @@ pub fn is_ccw(a: Point, b: Point, c: Point) -> bool {
     robust::orient2d(a.into(), b.into(), c.into()) > 0.0
 }
 
+pub fn direction(a: Point, b: Point, c: Point) -> Direction {
+    let d = robust::orient2d(a.into(), b.into(), c.into());
+    if d > 0.0 {
+        Direction::Left
+    } else if d < 0.0 {
+        Direction::Right
+    } else {
+        Direction::Straight
+    }
+}
+
 #[derive(Clone, Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
 pub struct Triangulation {

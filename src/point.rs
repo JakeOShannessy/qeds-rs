@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter},
     ops::{Add, Mul, Sub},
 };
-use serde::{Serialize,Deserialize};
 
 // TODO: create new wrapper type around point (and possibly the floats within)
 // to limit to safe operations. This wrapper will enforce the minimum signficant
@@ -30,6 +30,10 @@ impl Point {
 
     pub fn distance(&self, other: Self) -> f64 {
         ((other.x - self.x).powi(2) + (other.y - self.y).powi(2)).sqrt()
+    }
+
+    pub fn magnitude(&self) -> f64 {
+        (self.x.powi(2) + self.y.powi(2)).sqrt()
     }
 
     pub fn snap(&mut self) {

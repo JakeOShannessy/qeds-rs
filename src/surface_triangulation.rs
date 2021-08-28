@@ -3,6 +3,7 @@ use crate::point::*;
 use crate::qeds::*;
 use crate::triangulation::cocircular;
 use crate::triangulation::del_test_ccw;
+use crate::triangulation::direction;
 use crate::triangulation::is_ccw;
 use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
@@ -107,15 +108,29 @@ pub struct SurfaceTriangulation<T> {
     pub bounds: Option<(Point, Point)>,
 }
 
+pub fn to_letter(i: usize) -> char {
+    char::from_u32((b'a' + ((i % 26) as u8)).into()).unwrap()
+}
+pub fn to_edge_name(target: EdgeTarget) -> String {
+    let mut s = format!("{}", to_letter(target.e));
+    if target.r == 1 {
+        s.push_str("Rot")
+    } else if target.r == 2 {
+        s.push_str("Sym")
+    } else if target.r == 3 {
+        s.push_str("SymRot")
+    }
+    s
+}
+pub fn to_vertex_name(i: usize) -> String {
+    format!("P{}", i)
+}
 impl<T: Serialize> SurfaceTriangulation<T> {
     pub fn debug_table(&self) -> String {
         use prettytable::*;
         use prettytable::{row, Cell, Row, Table};
         // Create the table
         let mut table = Table::new();
-        fn to_letter(i: usize) -> char {
-            char::from_u32((b'a' + ((i%26) as u8)).into()).unwrap()
-        }
 
         let mut headers = Row::empty();
         headers.add_cell(Cell::new("-"));
@@ -135,54 +150,22 @@ impl<T: Serialize> SurfaceTriangulation<T> {
             headers.add_cell(Cell::new(&format!("{}", to_letter(i))));
             {
                 let target = quad.edges_a[0].next;
-                let mut s = format!("{}", to_letter(target.e));
-                if target.r == 1 {
-                    s.push_str("Rot")
-                } else if target.r == 2 {
-                    s.push_str("Sym")
-                } else if target.r == 3 {
-                    s.push_str("SymRot")
-                }
-                next.add_cell(Cell::new(&s));
+                next.add_cell(Cell::new(&to_edge_name(target)));
             }
             {
                 let target = quad.edges_b[0].next;
-                let mut s = format!("{}", to_letter(target.e));
-                if target.r == 1 {
-                    s.push_str("Rot")
-                } else if target.r == 2 {
-                    s.push_str("Sym")
-                } else if target.r == 3 {
-                    s.push_str("SymRot")
-                }
-                rot_next.add_cell(Cell::new(&s));
+                rot_next.add_cell(Cell::new(&to_edge_name(target)));
             }
             {
                 let target = quad.edges_a[1].next;
-                let mut s = format!("{}", to_letter(target.e));
-                if target.r == 1 {
-                    s.push_str("Rot")
-                } else if target.r == 2 {
-                    s.push_str("Sym")
-                } else if target.r == 3 {
-                    s.push_str("SymRot")
-                }
-                sym_next.add_cell(Cell::new(&s));
+                sym_next.add_cell(Cell::new(&to_edge_name(target)));
             }
             {
                 let target = quad.edges_b[1].next;
-                let mut s = format!("{}", to_letter(target.e));
-                if target.r == 1 {
-                    s.push_str("Rot")
-                } else if target.r == 2 {
-                    s.push_str("Sym")
-                } else if target.r == 3 {
-                    s.push_str("SymRot")
-                }
-                sym_rot_next.add_cell(Cell::new(&s));
+                sym_rot_next.add_cell(Cell::new(&to_edge_name(target)));
             }
-            org.add_cell(Cell::new(&format!("P{}",quad.edges_a[0].point)));
-            dest.add_cell(Cell::new(&format!("P{}",quad.edges_a[1].point)));
+            org.add_cell(Cell::new(&to_vertex_name(quad.edges_a[0].point)));
+            dest.add_cell(Cell::new(&to_vertex_name(quad.edges_a[1].point)));
         }
         table.add_row(headers);
         table.add_row(next);
@@ -203,7 +186,7 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         // Create the table
         let mut table = Table::new();
         fn to_letter(i: usize) -> char {
-            char::from_u32((b'a' + ((i%26) as u8)).into()).unwrap()
+            char::from_u32((b'a' + ((i % 26) as u8)).into()).unwrap()
         }
 
         let mut headers = Row::empty();
@@ -212,7 +195,7 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         table.add_row(headers);
         for (i, segment) in self.vertices.iter().enumerate() {
             let mut point_row = Row::empty();
-            point_row.add_cell(Cell::new(&format!("P{}", i)));
+            point_row.add_cell(Cell::new(&to_vertex_name(i)));
             point_row.add_cell(Cell::new(&format!("{}", segment.point)));
             table.add_row(point_row);
         }
@@ -220,21 +203,31 @@ impl<T: Serialize> SurfaceTriangulation<T> {
     }
     pub fn debug_dump(&self, msg: Option<&str>) {
         static N: AtomicUsize = AtomicUsize::new(0);
-        let old_n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 20;
         // Only do this the first 20 times, and don't do it during tests
-        #[cfg(not(test))]
-        if old_n < 20 {
+        // #[cfg(not(test))]
+        if n < 20 {
             let js = serde_json::to_string_pretty(self).unwrap();
-            let table = self.debug_table();
-            // let filename = if old_n % 2 == 0 { "a.json" } else { "b.json" };
-            let filename = if let Some(msg) = msg {
-                format!("{} - {}", old_n, msg)
+            let mut table = if let Some(msg) = msg {
+                format!("{}\n", msg)
             } else {
-                format!("{}", old_n)
+                String::from("\n")
             };
+            table.push_str(&self.debug_table());
+            // let filename = if old_n % 2 == 0 { "a.json" } else { "b.json" };
+            let filename = format!("{}", n);
+            // let filename = if let Some(msg) = msg {
+            //     format!("{} - {}", n, msg)
+            // } else {
+            //     format!("{}", n)
+            // };
             eprintln!("outputting: {}", filename);
-            std::fs::write(format!("{}.affrad_debug.json", filename), js).unwrap();
-            std::fs::write(format!("{}.affrad_debug.txt", filename), table).unwrap();
+            let dir = "affrad_debug";
+            let dir_json = "affrad_debug_json";
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::create_dir_all(dir_json).unwrap();
+            std::fs::write(format!("{}/{}.affrad_debug.json", dir_json, filename), js).unwrap();
+            std::fs::write(format!("{}/{}.affrad_debug.txt", dir, filename), table).unwrap();
         }
     }
 }
@@ -480,9 +473,9 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
             }
             self.add_to_boundary_unchecked(edge_target, point, data)
         } else {
-            let oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
+            let t = self.qeds.edge_a_ref(edge_target).oprev().target();
             self.qeds.delete(edge_target);
-            edge_target = oprev;
+            edge_target = t;
             self.add_to_quad_unchecked(edge_target, point, data)
         }
     }
@@ -496,12 +489,14 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         debug_assert_spaces(self);
         let x_onext = self.qeds.edge_a_ref(edge_target).onext().target();
         let x_dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
+        // let x_lnext = self.qeds.edge_a_ref(edge_target).d_prev().target();
+        let x_oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
         debug_assert_ne!(x_onext, edge_target);
         debug_assert_ne!(x_dprev, edge_target);
         // let dia_a_indices = self.get_segment_indices(self.qeds.edge_a_ref(edge_target).d_prev().sym());
         self.debug_dump(Some("Before delete"));
         self.qeds.delete(edge_target);
-        self.debug_dump(Some("Delete[c]"));
+        self.debug_dump(Some(&format!("Delete[{}]", to_edge_name(edge_target))));
         // let dia_c = self.qeds.edge_a_ref(edge_target);
         // let dia_a = dia_c.sym().onext().target();
         // let dia_e = dia_c.l_next().target();
@@ -515,14 +510,25 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         let mut base = self.qeds.make_edge_with_a(first_index, new_index).target();
         // assert_eq!()
         self.debug_dump(Some("MakeEdge"));
-        self.qeds.splice(base, x_onext);
-        self.debug_dump(Some("Splice[d,c.Dprev]"));
+        self.qeds.splice(base, x_oprev);
+        self.debug_dump(Some(&format!(
+            "Splice[{},{}]",
+            to_edge_name(base),
+            to_edge_name(x_onext)
+        )));
         {
-            let base_ref = self.connect(base,x_onext.sym());
-            let base_sym = base_ref.target().sym();
-            self.debug_dump(Some("Connect[c.Dprev.Sym,d]"));
-            let base_ref = self.connect(base_sym,x_dprev.sym());
-            self.debug_dump(Some("Connect[e.Oprev.Sym,e.Sym]"));
+            let cross = self.connect(base, x_onext.sym()).target();
+            self.debug_dump(Some(&format!(
+                "Connect[{},{}]",
+                to_edge_name(base),
+                to_edge_name(x_onext.sym())
+            )));
+            let end_ref = self.connect(cross.sym(), x_dprev.sym());
+            self.debug_dump(Some(&format!(
+                "Connect[{},{}]",
+                to_edge_name(cross.sym()),
+                to_edge_name(x_dprev.sym())
+            )));
             // edge_target = base_ref.onext().target();
         }
         // debug_assert_eq!(
@@ -536,7 +542,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         debug_assert_spaces(self);
         // self.retriangulate_suspect_edges(edge_target, point, first_index);
         // TODO: remove this.
-        self.retriangulate_all();
+        // self.retriangulate_all();
         // assert_eq!(0, self.retriangulate_all());
         // self.retriangulate_all();
         // for fail in self.fail_del_test() {
@@ -812,6 +818,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
 
     // TODO: This algorithm is known to fail in non-Delaunay triangulations.
     fn locate_raw(&self, mut point: Point, force: bool) -> Option<Location<'_>> {
+        panic!("don't use locate");
         point.snap();
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
@@ -1986,7 +1993,6 @@ mod tests {
                 let (p1, p2) = triangulation.get_segment(triangulation.qeds.edge_a_ref(edge));
                 eprintln!("edge_distance: {}", p1.distance(p2));
             }
-            // panic!("end");
         }
         {
             let edge = triangulation.get_matching_edge_indices(0, 1).unwrap();
@@ -1997,27 +2003,25 @@ mod tests {
             triangulation.add_point_to_edge(edge_target, midpoint, ());
             debug_assert_spaces(&triangulation);
         }
-        {
-            let edge = triangulation.get_matching_edge_indices(1, 2).unwrap();
-            let edge_target = edge.target();
-            let (p1, p2) = triangulation.get_segment(edge);
-            assert!(p1.distance(p2) > 11.0);
-            let midpoint = p1.midpoint(p2);
-            triangulation.add_point_to_edge(edge_target, midpoint, ());
-            debug_assert_spaces(&triangulation);
-        }
-        {
-            let edge = triangulation.get_matching_edge_indices(2, 0).unwrap();
-            let edge_target = edge.target();
-            let (p1, p2) = triangulation.get_segment(edge);
-            assert!(p1.distance(p2) > 11.0);
-            let midpoint = p1.midpoint(p2);
-            triangulation.add_point_to_edge(edge_target, midpoint, ());
-            debug_assert_spaces(&triangulation);
-        }
-        // triangulation.add_point(points[4], ());
+        // {
+        //     let edge = triangulation.get_matching_edge_indices(1, 2).unwrap();
+        //     let edge_target = edge.target();
+        //     let (p1, p2) = triangulation.get_segment(edge);
+        //     assert!(p1.distance(p2) > 11.0);
+        //     let midpoint = p1.midpoint(p2);
+        //     triangulation.add_point_to_edge(edge_target, midpoint, ());
+        //     debug_assert_spaces(&triangulation);
+        // }
+        // {
+        //     let edge = triangulation.get_matching_edge_indices(2, 0).unwrap();
+        //     let edge_target = edge.target();
+        //     let (p1, p2) = triangulation.get_segment(edge);
+        //     assert!(p1.distance(p2) > 11.0);
+        //     let midpoint = p1.midpoint(p2);
+        //     triangulation.add_point_to_edge(edge_target, midpoint, ());
+        //     debug_assert_spaces(&triangulation);
+        // }
         debug_assert_spaces(&triangulation);
-        // assert_eq!(4, triangulation.triangles().count());
     }
 }
 
@@ -2030,12 +2034,94 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
             // Debug spokes
             for edge in triangulation.qeds.base_edges() {
                 let vertex_index = edge.edge().point;
+                eprintln!("Looking at: {}", to_vertex_name(vertex_index));
                 let mut current = edge;
                 let mut i = 0;
+                let mut other_vertex_indices = vec![];
                 loop {
                     assert_eq!(vertex_index, current.edge().point);
+                    other_vertex_indices.push(current.sym().edge().point);
                     current = current.onext();
                     if current == edge {
+                        break;
+                    }
+
+                    i += 1;
+                    if i > 2000 {
+                        panic!("hit iteration limit");
+                    }
+                }
+                let mut total_angle = 0.0;
+                // Double up the first vertext
+                other_vertex_indices.push(other_vertex_indices[0]);
+                let mut other_vertex_indices = other_vertex_indices.into_iter();
+                let mut prev_vertex_index = other_vertex_indices.next().unwrap();
+                let central_point = triangulation.vertices.get(vertex_index).unwrap().point;
+                for other_vertex_index in other_vertex_indices {
+                    let p1 = triangulation.vertices.get(prev_vertex_index).unwrap().point;
+                    let p2 = triangulation
+                        .vertices
+                        .get(other_vertex_index)
+                        .unwrap()
+                        .point;
+                    let ba = p1 - central_point;
+                    let bc = p2 - central_point;
+                    let mut angle =
+                        ((ba.x * bc.x + ba.y * bc.y) / (ba.magnitude() * bc.magnitude())).acos();
+                    angle = match direction(p1, central_point, p2) {
+                        Direction::Left => 2.0 * std::f64::consts::PI - angle,
+                        Direction::Straight => std::f64::consts::PI,
+                        Direction::Right => angle,
+                    };
+                    if angle.is_nan() {
+                        eprintln!("points: {}-{}-{}", p1, central_point, p2);
+                        angle = std::f64::consts::PI;
+                    }
+                    eprintln!(
+                        "angle from {}-{}-{}: {:.2}°",
+                        to_vertex_name(prev_vertex_index),
+                        to_vertex_name(vertex_index),
+                        to_vertex_name(other_vertex_index),
+                        angle / std::f64::consts::PI * 180.0
+                    );
+                    total_angle += angle;
+                    prev_vertex_index = other_vertex_index;
+                }
+                // eprintln!(
+                //     "total angle: {}°",
+                //     total_angle / std::f64::consts::PI * 180.0
+                // );
+                assert!(
+                    (total_angle - 2.0 * std::f64::consts::PI).abs() < 0.1,
+                    "total angle around {} is {}, diff is {}",
+                    to_vertex_name(vertex_index),
+                    total_angle,
+                    (total_angle - 2.0 * std::f64::consts::PI).abs()
+                );
+            }
+        }
+        {
+            // Debug dual spokes
+            let mut n_many_spokes = None;
+            for edge in triangulation.qeds.base_edges() {
+                let edge = edge.rot();
+                let mut i = 0;
+                // let vertex_index = edge.edge().point;
+                let mut current = edge;
+                loop {
+                    // assert_eq!(vertex_index, current.edge().point);
+                    current = current.onext();
+                    if current == edge {
+                        if i != 2 {
+                            if let Some(n) = n_many_spokes {
+                                if n != i {
+                                    // panic!("wrong number of dual spokes");
+                                }
+                            } else {
+                                n_many_spokes = Some(i);
+                            }
+                        }
+                        // eprintln!("n_spokes: {}", i + 1);
                         break;
                     }
                     i += 1;
@@ -2047,7 +2133,7 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
         }
         {
             for (i, quad) in triangulation.qeds.quads.iter() {
-                assert_ne!(quad.edges_a[0].point,quad.edges_a[1].point);
+                assert_ne!(quad.edges_a[0].point, quad.edges_a[1].point);
             }
         }
         // Get all B edges.
