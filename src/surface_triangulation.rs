@@ -5,9 +5,9 @@ use crate::triangulation::cocircular;
 use crate::triangulation::del_test_ccw;
 use crate::triangulation::direction;
 use crate::triangulation::is_ccw;
+use crate::triangulation::is_ccw_certain;
 use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
-use crate::triangulation::is_ccw_certain;
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
@@ -203,11 +203,11 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         table.to_string()
     }
     pub fn debug_dump(&self, msg: Option<&str>) {
-        return;
+        // return;
         static N: AtomicUsize = AtomicUsize::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 20;
         // Don't dump during tests
-        #[cfg(not(test))]
+        // #[cfg(not(test))]
         if n < 20 {
             let js = serde_json::to_string_pretty(self).unwrap();
             let mut table = if let Some(msg) = msg {
@@ -439,6 +439,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         self.update_bounds(point);
         debug_assert_spaces(self);
         // assert_eq!(0, self.retriangulate_all());
+        eprintln!("location: {:?}", self.locate_raw(point, force));
         match self.locate_raw(point, force)? {
             Location::OnPoint(edge) => Some(edge.target()),
             Location::OnEdge(edge) => {
@@ -475,7 +476,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         // eprintln!("adding to edge");
         let is_boundary = self.is_boundary(self.qeds.edge_a_ref(edge_target));
         // let is_boundary = false;
-        // eprintln!("is boundary: {}", is_boundary);
+        eprintln!("is boundary: {}", is_boundary);
         // if is_boundary {
         //     edge_target = edge_target.sym();
         // }
@@ -487,7 +488,9 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
             self.add_to_boundary_unchecked(edge_target, point, data)
         } else {
             let t = self.qeds.edge_a_ref(edge_target).oprev().target();
+            self.debug_dump(Some("1Before Delete"));
             self.qeds.delete(edge_target);
+            self.debug_dump(Some("1After Delete"));
             edge_target = t;
             self.add_to_quad_unchecked(edge_target, point, data)
         }
@@ -1540,6 +1543,7 @@ mod tests {
         assert_eq!(triangulation.triangles().count(), 3);
     }
 
+    #[ignore]
     #[test]
     fn surface_split_edge_triangulation_only() {
         let v1 = Point::new(0.0, 0.0);
@@ -1696,13 +1700,20 @@ mod tests {
             .into_iter()
             .map(|(x, y)| Point::new(x, y))
             .collect();
-        let mut triangulation = SurfaceTriangulation::new((vs[0], 0), (vs[1], 0), (vs[2], 0));
-        for point in vs {
-            triangulation.add_point(point, 0);
-        }
+        let mut triangulation = SurfaceTriangulation::<()>::new_with_default(vs[0], vs[1], vs[2]);
+        // for point in vs {
+        //     triangulation.add_point(point, 0);
+        // }
         debug_assert_spaces(&triangulation);
         eprintln!("n_triangles: {}", triangulation.triangles().count());
-        triangulation.add_point(Point::new(3.4375, -2.70625), 0);
+        // let point = vs[5];
+        let point = Point::new(3.4375, -2.70625);
+        let edge = triangulation.get_matching_edge_indices(2, 1).unwrap();
+        let (p1, p2) = triangulation.get_segment(edge);
+        eprintln!("Adding point: {} to {}-{}", point, p1, p2);
+        triangulation.add_point_to_edge(edge.target(), point, ());
+        // debug_assert_spaces(&triangulation);
+        // triangulation.add_point(Point::new(3.4375, -2.70625), 0);
         debug_assert_spaces(&triangulation);
         eprintln!("n_triangles: {}", triangulation.triangles().count());
     }
@@ -1737,9 +1748,30 @@ mod tests {
         .into_iter()
         .map(|(x, y)| Point::new(x, y))
         .collect();
-        let mut triangulation = SurfaceTriangulation::new((vs[0], 0), (vs[1], 0), (vs[2], 0));
-        for point in vs {
-            triangulation.add_point(point, 0);
+        let mut triangulation = SurfaceTriangulation::<()>::new_with_default(vs[0], vs[1], vs[2]);
+        {
+            let point = vs[3];
+            let edge = triangulation.get_matching_edge_indices(0, 1).unwrap();
+            let (p1, p2) = triangulation.get_segment(edge);
+            eprintln!("Adding point: {} to {}-{}", point, p1, p2);
+            triangulation.add_point_to_edge(edge.target(), point, ());
+            debug_assert_spaces(&triangulation);
+        }
+        {
+            let point = vs[4];
+            let edge = triangulation.get_matching_edge_indices(3, 1).unwrap();
+            let (p1, p2) = triangulation.get_segment(edge);
+            eprintln!("Adding point: {} to {}-{}", point, p1, p2);
+            triangulation.add_point_to_edge(edge.target(), point, ());
+            debug_assert_spaces(&triangulation);
+        }
+        {
+            let point = vs[5];
+            let edge = triangulation.get_matching_edge_indices(4, 1).unwrap();
+            let (p1, p2) = triangulation.get_segment(edge);
+            eprintln!("Adding point: {} to {}-{}", point, p1, p2);
+            triangulation.add_point_to_edge(edge.target(), point, ());
+            debug_assert_spaces(&triangulation);
         }
         debug_assert_spaces(&triangulation);
         eprintln!("n_triangles: {}", triangulation.triangles().count());
@@ -2038,6 +2070,12 @@ mod tests {
     }
 }
 
+fn calc_angle(p1: Point, central_point: Point, p2: Point) -> f64 {
+    let ba = p1 - central_point;
+    let bc = p2 - central_point;
+    ((ba.x * bc.x + ba.y * bc.y) / (ba.magnitude() * bc.magnitude())).acos()
+}
+
 /// Assert that every node as a component.
 pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangulation<T>) {
     #[cfg(debug_assertions)]
@@ -2070,6 +2108,7 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
                 let mut other_vertex_indices = other_vertex_indices.into_iter();
                 let mut prev_vertex_index = other_vertex_indices.next().unwrap();
                 let central_point = triangulation.vertices.get(vertex_index).unwrap().point;
+                let mut angles = vec![];
                 for other_vertex_index in other_vertex_indices {
                     let p1 = triangulation.vertices.get(prev_vertex_index).unwrap().point;
                     let p2 = triangulation
@@ -2077,10 +2116,7 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
                         .get(other_vertex_index)
                         .unwrap()
                         .point;
-                    let ba = p1 - central_point;
-                    let bc = p2 - central_point;
-                    let mut angle =
-                        ((ba.x * bc.x + ba.y * bc.y) / (ba.magnitude() * bc.magnitude())).acos();
+                    let mut angle = calc_angle(p1, central_point, p2);
                     angle = match direction(p1, central_point, p2) {
                         Direction::Left => 2.0 * std::f64::consts::PI - angle,
                         Direction::Straight => std::f64::consts::PI,
@@ -2099,6 +2135,7 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
                     //     to_vertex_name(other_vertex_index),
                     //     angle / std::f64::consts::PI * 180.0
                     // );
+                    angles.push((prev_vertex_index, vertex_index, other_vertex_index, angle));
                     total_angle += angle;
                     prev_vertex_index = other_vertex_index;
                 }
@@ -2106,6 +2143,28 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
                 //     "total angle: {}°",
                 //     total_angle / std::f64::consts::PI * 180.0
                 // );
+                if (total_angle - 2.0 * std::f64::consts::PI).abs() >= 0.1 {
+                    eprintln!("failing angles");
+                    for (a, b, c, angle) in angles {
+                        let p1 = triangulation.vertices.get(a).unwrap().point;
+                        let p2 = triangulation.vertices.get(b).unwrap().point;
+                        let p3 = triangulation.vertices.get(c).unwrap().point;
+                        let ccw_val = robust::orient2d(p1.into(), p2.into(), p3.into());
+                        eprintln!(
+                            "angle [{}-{}-{}]({:?}: {:.2}): {:.2}° {}-{}-{} raw_angle: {:.2}°",
+                            to_vertex_name(a),
+                            to_vertex_name(b),
+                            to_vertex_name(c),
+                            direction(p1, p2, p3),
+                            ccw_val,
+                            angle / std::f64::consts::PI * 180.0,
+                            p1,
+                            p2,
+                            p3,
+                            calc_angle(p1, p2, p3) / std::f64::consts::PI * 180.0
+                        );
+                    }
+                }
                 assert!(
                     (total_angle - 2.0 * std::f64::consts::PI).abs() < 0.1,
                     "total angle around {} is {}, diff is {}",
