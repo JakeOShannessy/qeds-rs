@@ -203,10 +203,11 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         table.to_string()
     }
     pub fn debug_dump(&self, msg: Option<&str>) {
+        return;
         static N: AtomicUsize = AtomicUsize::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 20;
-        // Only do this the first 20 times, and don't do it during tests
-        // #[cfg(not(test))]
+        // Don't dump during tests
+        #[cfg(not(test))]
         if n < 20 {
             let js = serde_json::to_string_pretty(self).unwrap();
             let mut table = if let Some(msg) = msg {
@@ -830,7 +831,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
 
     // TODO: This algorithm is known to fail in non-Delaunay triangulations.
     fn locate_raw(&self, mut point: Point, force: bool) -> Option<Location<'_>> {
-        panic!("don't use locate");
+        // panic!("don't use locate");
         point.snap();
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
