@@ -103,7 +103,7 @@ pub type VertexIndex = usize;
 /// A Qeds data structure specialised to a 2d triangulation.
 pub struct SurfaceTriangulation<T> {
     /// The quad-edge data structure we use as the basis for the triangulation.
-    pub qeds: Qeds<VertexIndex, ()>,
+    pub qeds: Qeds<VertexIndex, Space>,
     pub vertices: Vec<Segment<T>>,
     pub boundary_edge: EdgeTarget,
     pub bounds: Option<(Point, Point)>,
@@ -203,7 +203,7 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         table.to_string()
     }
     pub fn debug_dump(&self, msg: Option<&str>) {
-        // return;
+        return;
         static N: AtomicUsize = AtomicUsize::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 20;
         // Don't dump during tests
@@ -234,7 +234,7 @@ impl<T: Serialize> SurfaceTriangulation<T> {
     }
 }
 impl<T> SurfaceTriangulation<T> {
-    fn is_tri_real(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
+    fn is_tri_real(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
         let first = edge_ref;
         let mut current = first;
         let mut i = 0;
@@ -251,7 +251,7 @@ impl<T> SurfaceTriangulation<T> {
         }
         true
     }
-    fn lies_right(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> Lies {
+    fn lies_right(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> Lies {
         use Lies::*;
         let pa = self.vertices.get(edge_ref.edge().point).unwrap().point();
         let pb = self
@@ -267,20 +267,24 @@ impl<T> SurfaceTriangulation<T> {
         }
     }
 
-    pub fn lies_right_strict(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> bool {
+    pub fn lies_right_strict(
+        &self,
+        edge_ref: EdgeRefA<'_, VertexIndex, Space>,
+        point: Point,
+    ) -> bool {
         self.lies_right(edge_ref, point) == Lies::Yes
     }
 
-    pub fn is_outward_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
-        // edge_ref.rot().edge().point == Space::Out || edge_ref.rot().sym().edge().point == Space::Out
-        !self.curves_left_certain(edge_ref)
+    pub fn is_outward_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
+        edge_ref.sym().rot().edge().point == Space::Out
+        // !self.curves_left_certain(edge_ref)
     }
 
-    pub fn is_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
+    pub fn is_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
         self.is_outward_boundary(edge_ref) || self.is_outward_boundary(edge_ref.sym())
     }
 
-    pub fn curves_left(&self, e: EdgeRefA<'_, VertexIndex, ()>) -> bool {
+    pub fn curves_left(&self, e: EdgeRefA<'_, VertexIndex, Space>) -> bool {
         let org = self.vertices.get(e.edge().point).unwrap().point;
         let dest = self.vertices.get(e.sym().edge().point).unwrap().point;
         let next = self
@@ -291,7 +295,7 @@ impl<T> SurfaceTriangulation<T> {
         is_ccw(org, dest, next)
     }
 
-    pub fn curves_left_certain(&self, e: EdgeRefA<'_, VertexIndex, ()>) -> bool {
+    pub fn curves_left_certain(&self, e: EdgeRefA<'_, VertexIndex, Space>) -> bool {
         let org = self.vertices.get(e.edge().point).unwrap().point;
         let dest = self.vertices.get(e.sym().edge().point).unwrap().point;
         let next = self
@@ -302,15 +306,23 @@ impl<T> SurfaceTriangulation<T> {
         is_ccw_certain(org, dest, next)
     }
 
-    pub fn lies_left_strict(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> bool {
+    pub fn lies_left_strict(
+        &self,
+        edge_ref: EdgeRefA<'_, VertexIndex, Space>,
+        point: Point,
+    ) -> bool {
         self.lies_left(edge_ref, point) == Lies::Yes
     }
 
-    pub fn lies_right_or_on(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> bool {
+    pub fn lies_right_or_on(
+        &self,
+        edge_ref: EdgeRefA<'_, VertexIndex, Space>,
+        point: Point,
+    ) -> bool {
         self.lies_right(edge_ref, point) != Lies::No
     }
 
-    pub fn lies_left(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> Lies {
+    pub fn lies_left(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> Lies {
         let pa = self.vertices.get(edge_ref.edge().point).unwrap().point();
         let pb = self
             .vertices
@@ -325,7 +337,7 @@ impl<T> SurfaceTriangulation<T> {
         }
     }
 
-    pub fn lies_on(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> bool {
+    pub fn lies_on(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> bool {
         let pa = self.vertices.get(edge_ref.edge().point).unwrap().point();
         let pb = self
             .vertices
@@ -347,7 +359,7 @@ impl<T> SurfaceTriangulation<T> {
         res_a || res_b
     }
 
-    pub fn in_left_face(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> bool {
+    pub fn in_left_face(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> bool {
         for edge in edge_ref.l_face().edges.iter() {
             let is_left = match self.lies_left(*edge, point) {
                 Lies::No => false,
@@ -361,7 +373,7 @@ impl<T> SurfaceTriangulation<T> {
         true
     }
 
-    pub fn on_left_face(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> bool {
+    pub fn on_left_face(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>, point: Point) -> bool {
         for edge in edge_ref.l_face().edges.iter() {
             let is_left = match self.lies_left(*edge, point) {
                 Lies::No => false,
@@ -416,7 +428,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         base.sym()
     }
 
-    fn connect(&'_ mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, VertexIndex, ()> {
+    fn connect(&'_ mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, VertexIndex, Space> {
         let e = self.qeds.connect(a, b).target();
         self.qeds.edge_a_ref(e)
     }
@@ -523,8 +535,9 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         eprintln!("first index: {}", first_index);
         let new_index = self.vertices.len();
         self.vertices.push(Segment::new(point, data));
-        let mut base = self.qeds.make_edge_with_a(first_index, new_index).target();
-        // assert_eq!()
+        let base = self.qeds.make_edge_with_a(first_index, new_index).target();
+        let base_edge = self.qeds.edge_b_mut(base.rot());
+        base_edge.point = Space::Out;
         self.debug_dump(Some("MakeEdge"));
         self.qeds.splice(base, x_oprev);
         self.debug_dump(Some(&format!(
@@ -533,13 +546,18 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
             to_edge_name(x_onext)
         )));
         {
-            let cross = self.connect(base, x_onext.sym()).target();
+            let cross = self.connect(base, x_onext.sym());
+
+            let cross = cross.target();
+
             self.debug_dump(Some(&format!(
                 "Connect[{},{}]",
                 to_edge_name(base),
                 to_edge_name(x_onext.sym())
             )));
-            let end_ref = self.connect(cross.sym(), x_dprev.sym());
+            let end_ref = self.connect(cross.sym(), x_dprev.sym()).target();
+            let new_edge = self.qeds.edge_b_mut(end_ref.rot());
+            new_edge.point = Space::Out;
             self.debug_dump(Some(&format!(
                 "Connect[{},{}]",
                 to_edge_name(cross.sym()),
@@ -603,7 +621,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         &self,
         i1: VertexIndex,
         i2: VertexIndex,
-    ) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
+    ) -> Option<EdgeRefA<'_, VertexIndex, Space>> {
         for edge in self.base_targets() {
             let edge_ref = self.qeds.edge_a_ref(edge);
             let edge_ref_sym = self.qeds.edge_a_ref(edge.sym());
@@ -618,7 +636,11 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         }
         None
     }
-    pub fn get_matching_edge(&self, p1: Point, p2: Point) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
+    pub fn get_matching_edge(
+        &self,
+        p1: Point,
+        p2: Point,
+    ) -> Option<EdgeRefA<'_, VertexIndex, Space>> {
         for edge in self.base_targets() {
             let edge_ref = self.qeds.edge_a_ref(edge);
             let segment = self.get_segment(edge_ref);
@@ -643,12 +665,16 @@ impl<T: Default> SurfaceTriangulation<T> {
         let b_index = 1;
         let c_index = 2;
         let mut qeds = Qeds::new();
-        let edge_a = qeds.make_edge_with_ab(a_index, b_index, (), ()).target();
-        let edge_b = qeds.make_edge_with_ab(b_index, c_index, (), ()).target();
+        let edge_a = qeds
+            .make_edge_with_ab(a_index, b_index, Space::Out, Space::In)
+            .target();
+        let edge_b = qeds
+            .make_edge_with_ab(b_index, c_index, Space::Out, Space::In)
+            .target();
         let result = {
             qeds.splice(edge_a.sym(), edge_b);
             qeds.connect(edge_b, edge_a);
-            // qeds.quads[2].edges_b[0].point = Space::Out;
+            qeds.quads[2].edges_b[0].point = Space::Out;
             SurfaceTriangulation {
                 qeds,
                 vertices: vec![seg_a, seg_b, seg_c],
@@ -670,12 +696,16 @@ impl<T: Clone> SurfaceTriangulation<T> {
         let b_index = 1;
         let c_index = 2;
         let mut qeds = Qeds::new();
-        let edge_a = qeds.make_edge_with_ab(a_index, b_index, (), ()).target();
-        let edge_b = qeds.make_edge_with_ab(b_index, c_index, (), ()).target();
+        let edge_a = qeds
+            .make_edge_with_ab(a_index, b_index, Space::Out, Space::In)
+            .target();
+        let edge_b = qeds
+            .make_edge_with_ab(b_index, c_index, Space::Out, Space::In)
+            .target();
         let result = {
             qeds.splice(edge_a.sym(), edge_b);
             qeds.connect(edge_b, edge_a);
-            // qeds.quads[2].edges_b[0].point = Space::Out;
+            qeds.quads[2].edges_b[0].point = Space::Out;
             SurfaceTriangulation {
                 qeds,
                 vertices: vec![seg_a, seg_b, seg_c],
@@ -810,8 +840,8 @@ impl<T: Clone> SurfaceTriangulation<T> {
 
     pub fn neighbouring_points<'a>(
         &'a self,
-        edge: EdgeRefA<'a, VertexIndex, ()>,
-    ) -> Vec<EdgeRefA<'a, VertexIndex, ()>> {
+        edge: EdgeRefA<'a, VertexIndex, Space>,
+    ) -> Vec<EdgeRefA<'a, VertexIndex, Space>> {
         let mut neighbouring_refs = vec![edge.sym()];
         let mut current_edge = edge;
         loop {
@@ -940,20 +970,20 @@ impl<T: Clone> SurfaceTriangulation<T> {
         Some(location)
     }
     /// Return the canonical tri within which this point is located.
-    pub fn locate_tri(&self, point: Point) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
+    pub fn locate_tri(&self, point: Point) -> Option<EdgeRefA<'_, VertexIndex, Space>> {
         Some(self.locate(point)?.edge().get_tri_canonical())
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Location<'a> {
-    OnPoint(EdgeRefA<'a, VertexIndex, ()>),
-    OnEdge(EdgeRefA<'a, VertexIndex, ()>),
-    OnFace(EdgeRefA<'a, VertexIndex, ()>),
+    OnPoint(EdgeRefA<'a, VertexIndex, Space>),
+    OnEdge(EdgeRefA<'a, VertexIndex, Space>),
+    OnFace(EdgeRefA<'a, VertexIndex, Space>),
 }
 
 impl<'a> Location<'a> {
-    pub fn edge(&self) -> EdgeRefA<'a, VertexIndex, ()> {
+    pub fn edge(&self) -> EdgeRefA<'a, VertexIndex, Space> {
         match *self {
             Location::OnPoint(edge) => edge,
             Location::OnEdge(edge) => edge,
@@ -963,8 +993,8 @@ impl<'a> Location<'a> {
 }
 
 pub struct SegmentsIter<'a, T> {
-    slab_iter: slab::Iter<'a, Quad<VertexIndex, ()>>,
-    current_quad: Option<Quad<VertexIndex, ()>>,
+    slab_iter: slab::Iter<'a, Quad<VertexIndex, Space>>,
+    current_quad: Option<Quad<VertexIndex, Space>>,
     _data: PhantomData<T>,
 }
 
@@ -1043,11 +1073,11 @@ impl<T> SurfaceTriangulation<T> {
         NodeIter::new(self)
     }
 
-    pub fn qeds(&self) -> Option<&Qeds<VertexIndex, ()>> {
+    pub fn qeds(&self) -> Option<&Qeds<VertexIndex, Space>> {
         Some(&self.qeds)
     }
 
-    pub fn some_edge_a(&self) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
+    pub fn some_edge_a(&self) -> Option<EdgeRefA<'_, VertexIndex, Space>> {
         let (i, _) = self.qeds.quads.iter().next()?;
         Some(self.qeds.edge_a_ref(EdgeTarget::new(i, 0, 0)))
     }
@@ -1072,7 +1102,7 @@ impl<T> SurfaceTriangulation<T> {
         }
     }
 
-    pub fn boundary(&self) -> BoundaryIter<'_, VertexIndex, ()> {
+    pub fn boundary(&self) -> BoundaryIter<'_, VertexIndex, Space> {
         BoundaryIter::new(&self.qeds, self.boundary_edge)
     }
 
@@ -1116,7 +1146,7 @@ impl<T> SurfaceTriangulation<T> {
             .point;
         cocircular(a, b, c, d)
     }
-    pub fn get_segment(&self, edge: EdgeRefA<'_, VertexIndex, ()>) -> (Point, Point) {
+    pub fn get_segment(&self, edge: EdgeRefA<'_, VertexIndex, Space>) -> (Point, Point) {
         let i1 = edge.edge().point;
         let i2 = edge.sym().edge().point;
         debug_assert_ne!(i1, i2);
@@ -1170,7 +1200,7 @@ impl<T> SurfaceTriangulation<T> {
     }
 }
 
-impl<'a> EdgeRefA<'a, VertexIndex, ()> {
+impl<'a> EdgeRefA<'a, VertexIndex, Space> {
     pub fn triangle_across(&self) -> Self {
         let edge_on_next_tri = self.sym();
         edge_on_next_tri.get_tri_canonical()
@@ -1201,7 +1231,7 @@ impl<'a, T> RawTriangleIter<'a, T> {
 }
 
 impl<'a, T> Iterator for RawTriangleIter<'a, T> {
-    type Item = EdgeRefA<'a, VertexIndex, ()>;
+    type Item = EdgeRefA<'a, VertexIndex, Space>;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // First we check that the edge actually exists for this given
@@ -1392,7 +1422,7 @@ impl<'a, T> Iterator for NodeIter<'a, T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Space {
     In,
     Out,
@@ -1404,7 +1434,7 @@ impl Default for Space {
     }
 }
 
-impl<'a> EdgeRefA<'a, VertexIndex, ()> {
+impl<'a> EdgeRefA<'a, VertexIndex, Space> {
     /// An edge is the canonical edge for a tri iff it has the lowest e value
     /// for the tri.
     fn is_tri_canonical(&self) -> bool {
@@ -1448,7 +1478,7 @@ pub fn get_edge<T>(
     triangulation: &SurfaceTriangulation<T>,
     pa: Point,
     pb: Point,
-) -> Option<EdgeRefA<'_, VertexIndex, ()>> {
+) -> Option<EdgeRefA<'_, VertexIndex, Space>> {
     for (i, quad) in triangulation.qeds().unwrap().quads.iter() {
         let edge1 = triangulation
             .vertices
