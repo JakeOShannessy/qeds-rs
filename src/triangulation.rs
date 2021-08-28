@@ -137,6 +137,11 @@ pub fn is_ccw(a: Point, b: Point, c: Point) -> bool {
     robust::orient2d(a.into(), b.into(), c.into()) > 0.0
 }
 
+
+pub fn is_ccw_certain(a: Point, b: Point, c: Point) -> bool {
+    robust::orient2d(a.into(), b.into(), c.into()) > 0.01
+}
+
 pub fn direction(a: Point, b: Point, c: Point) -> Direction {
     let d = robust::orient2d(a.into(), b.into(), c.into());
     if d > 0.0 {

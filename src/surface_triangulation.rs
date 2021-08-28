@@ -7,6 +7,7 @@ use crate::triangulation::direction;
 use crate::triangulation::is_ccw;
 use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
+use crate::triangulation::is_ccw_certain;
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
@@ -271,7 +272,7 @@ impl<T> SurfaceTriangulation<T> {
 
     pub fn is_outward_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
         // edge_ref.rot().edge().point == Space::Out || edge_ref.rot().sym().edge().point == Space::Out
-        !self.curves_left(edge_ref)
+        !self.curves_left_certain(edge_ref)
     }
 
     pub fn is_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>) -> bool {
@@ -287,6 +288,17 @@ impl<T> SurfaceTriangulation<T> {
             .unwrap()
             .point;
         is_ccw(org, dest, next)
+    }
+
+    pub fn curves_left_certain(&self, e: EdgeRefA<'_, VertexIndex, ()>) -> bool {
+        let org = self.vertices.get(e.edge().point).unwrap().point;
+        let dest = self.vertices.get(e.sym().edge().point).unwrap().point;
+        let next = self
+            .vertices
+            .get(e.l_next().sym().edge().point)
+            .unwrap()
+            .point;
+        is_ccw_certain(org, dest, next)
     }
 
     pub fn lies_left_strict(&self, edge_ref: EdgeRefA<'_, VertexIndex, ()>, point: Point) -> bool {
@@ -2073,8 +2085,10 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
                         Direction::Straight => std::f64::consts::PI,
                         Direction::Right => angle,
                     };
-                    if angle.is_nan() {
+                    if angle.is_nan() || angle > 358.0 {
                         eprintln!("points: {}-{}-{}", p1, central_point, p2);
+                    }
+                    if angle.is_nan() {
                         angle = std::f64::consts::PI;
                     }
                     eprintln!(
