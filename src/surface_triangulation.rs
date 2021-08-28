@@ -2046,7 +2046,7 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
             // Debug spokes
             for edge in triangulation.qeds.base_edges() {
                 let vertex_index = edge.edge().point;
-                eprintln!("Looking at: {}", to_vertex_name(vertex_index));
+                // eprintln!("Looking at: {}", to_vertex_name(vertex_index));
                 let mut current = edge;
                 let mut i = 0;
                 let mut other_vertex_indices = vec![];
@@ -2085,19 +2085,19 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
                         Direction::Straight => std::f64::consts::PI,
                         Direction::Right => angle,
                     };
-                    if angle.is_nan() || angle > 358.0 {
-                        eprintln!("points: {}-{}-{}", p1, central_point, p2);
-                    }
+                    // if angle.is_nan() || angle > 358.0 {
+                    //     eprintln!("points: {}-{}-{}", p1, central_point, p2);
+                    // }
                     if angle.is_nan() {
                         angle = std::f64::consts::PI;
                     }
-                    eprintln!(
-                        "angle from {}-{}-{}: {:.2}°",
-                        to_vertex_name(prev_vertex_index),
-                        to_vertex_name(vertex_index),
-                        to_vertex_name(other_vertex_index),
-                        angle / std::f64::consts::PI * 180.0
-                    );
+                    // eprintln!(
+                    //     "angle from {}-{}-{}: {:.2}°",
+                    //     to_vertex_name(prev_vertex_index),
+                    //     to_vertex_name(vertex_index),
+                    //     to_vertex_name(other_vertex_index),
+                    //     angle / std::f64::consts::PI * 180.0
+                    // );
                     total_angle += angle;
                     prev_vertex_index = other_vertex_index;
                 }
