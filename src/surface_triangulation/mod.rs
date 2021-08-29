@@ -446,7 +446,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         edge_target: EdgeTarget,
         point: Point,
         data: T,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
         let e = self.add_to_quad_unchecked_impl(edge_target, point, data, true);
         // self.retriangulate_suspect_edges(e, point, first_index);
         e
@@ -458,14 +458,17 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         point: Point,
         data: T,
         retriangulate: bool,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
+        let mut added_edges = Vec::with_capacity(4);
         let first_index = self.qeds.edge_a_ref(edge_target).edge().point;
         let new_index = self.vertices.len();
         self.vertices.push(Segment::new(point, data));
         let mut base = self.qeds.make_edge_with_a(first_index, new_index).target();
+        added_edges.push(base.sym());
         self.qeds.splice(base, edge_target);
         loop {
             let base_ref = self.connect(edge_target, base.sym());
+            added_edges.push(base_ref.target().sym());
             edge_target = base_ref.oprev().target();
             base = base_ref.target();
             if self.qeds.edge_a(edge_target.sym()).point == first_index {
@@ -484,8 +487,14 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
                 .point(),
             point
         );
+        #[cfg(debug_assertions)]
+        {
+            for e in added_edges.iter() {
+                assert_eq!(new_index, self.qeds.edge_a(*e).point);
+            }
+        }
         debug_assert_spaces(self);
-        base.sym()
+        added_edges
     }
 
     fn connect(&'_ mut self, a: EdgeTarget, b: EdgeTarget) -> EdgeRefA<'_, VertexIndex, Space> {
@@ -493,17 +502,17 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         self.qeds.edge_a_ref(e)
     }
 
-    pub fn add_point_with_default(&mut self, point: Point) -> Option<EdgeTarget> {
+    pub fn add_point_with_default(&mut self, point: Point) -> Option<Vec<EdgeTarget>> {
         self.add_point(point, Default::default())
     }
 
     /// The edge this returns should always have the added point at its origin.
     /// It should not result in non-CCW triangles.
-    pub fn add_point(&mut self, point: Point, data: T) -> Option<EdgeTarget> {
+    pub fn add_point(&mut self, point: Point, data: T) -> Option<Vec<EdgeTarget>> {
         self.add_point_raw(point, data, false, true)
     }
 
-    pub fn add_point_force(&mut self, point: Point, data: T) -> Option<EdgeTarget> {
+    pub fn add_point_force(&mut self, point: Point, data: T) -> Option<Vec<EdgeTarget>> {
         self.add_point_raw(point, data, true, true)
     }
     fn add_point_raw(
@@ -512,14 +521,14 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         data: T,
         force: bool,
         retriangulate: bool,
-    ) -> Option<EdgeTarget> {
+    ) -> Option<Vec<EdgeTarget>> {
         point.snap();
         self.update_bounds(point);
         debug_assert_spaces(self);
         // assert_eq!(0, self.retriangulate_all());
         eprintln!("location: {:?}", self.locate_raw(point, force));
         match self.locate_raw(point, force)? {
-            Location::OnPoint(edge) => Some(edge.target()),
+            Location::OnPoint(edge) => Some(vec![edge.target()]),
             Location::OnEdge(edge) => {
                 let target = edge.target();
                 Some(self.add_point_to_edge_unchecked(target, point, data, retriangulate))
@@ -551,7 +560,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         point: Point,
         data: T,
         retriangulate: bool,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
         let is_boundary = self.is_boundary(self.qeds.edge_a_ref(edge_target));
         if is_boundary {
             if self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)) {
@@ -573,7 +582,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         edge_target: EdgeTarget,
         point: Point,
         data: T,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
         self.add_to_boundary_unchecked_impl(edge_target, point, data, true)
     }
     fn add_to_boundary_unchecked_impl(
@@ -582,7 +591,8 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         point: Point,
         data: T,
         retriangulate: bool,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
+        let mut added_edges = Vec::with_capacity(3);
         debug_assert_spaces(self);
         let x_onext = self.qeds.edge_a_ref(edge_target).onext().target();
         let x_dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
@@ -597,6 +607,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         let new_index = self.vertices.len();
         self.vertices.push(Segment::new(point, data));
         let base = self.qeds.make_edge_with_a(first_index, new_index).target();
+        added_edges.push(base.sym());
         let base_edge = self.qeds.edge_b_mut(base.rot());
         base_edge.point = Space::Out;
         self.debug_dump(Some("MakeEdge"));
@@ -610,6 +621,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
             let cross = self.connect(base, x_onext.sym());
 
             let cross = cross.target();
+            added_edges.push(cross);
 
             self.debug_dump(Some(&format!(
                 "Connect[{},{}]",
@@ -617,6 +629,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
                 to_edge_name(x_onext.sym())
             )));
             let end_ref = self.connect(cross.sym(), x_dprev.sym()).target();
+            added_edges.push(end_ref);
             let new_edge = self.qeds.edge_b_mut(end_ref.rot());
             new_edge.point = Space::Out;
             self.debug_dump(Some(&format!(
@@ -625,6 +638,12 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
                 to_edge_name(x_dprev.sym())
             )));
             // edge_target = base_ref.onext().target();
+        }
+        #[cfg(debug_assertions)]
+        {
+            for e in added_edges.iter() {
+                assert_eq!(new_index, self.qeds.edge_a(*e).point);
+            }
         }
         // debug_assert_eq!(
         //     self.vertices
@@ -649,7 +668,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         // debug_assert_eq!(0, self.n_fail_del_test());
         // eprintln!("inserted: {}", point);
         // debug_assert_spaces(self);
-        base.sym()
+        added_edges
     }
 
     pub fn add_point_to_edge(
@@ -657,19 +676,21 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         edge_target: EdgeTarget,
         point: Point,
         data: T,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
         self.add_point_to_edge_impl(edge_target, point, data, true)
     }
 
     /// Add a point to a specified edge. If the point lies on one of the
-    /// vertices just add it there.
+    /// vertices just add it there. Returns a list of edges that were added.
+    /// Each edge returned has the new point as its org. TODO: currently returns
+    /// a single existing edge it point already exists, change this.
     pub fn add_point_to_edge_impl(
         &mut self,
         edge_target: EdgeTarget,
         point: Point,
         data: T,
         retriangulate: bool,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
         {
             let point_a = self
                 .vertices
@@ -683,9 +704,9 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
                 .point;
 
             if point_a == point {
-                edge_target
+                vec![edge_target]
             } else if point_b == point {
-                edge_target.sym()
+                vec![edge_target.sym()]
             } else {
                 self.add_point_to_edge_unchecked(edge_target, point, data, retriangulate)
             }
@@ -728,6 +749,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         None
     }
 }
+
 
 impl<T: Default> SurfaceTriangulation<T> {
     pub fn new_with_default(a: Point, b: Point, c: Point) -> Self {

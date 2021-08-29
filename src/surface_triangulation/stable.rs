@@ -17,6 +17,9 @@ impl<T> SurfaceTriangulationStable<T> {
         self.st.retriangulate_all();
         self.st
     }
+    pub fn base_targets(&self) -> impl Iterator<Item = EdgeTarget> + '_ {
+        self.st.base_targets()
+    }
 }
 
 impl<T: Clone + Default + Serialize> SurfaceTriangulationStable<T> {
@@ -27,7 +30,7 @@ impl<T: Clone + Default + Serialize> SurfaceTriangulationStable<T> {
         edge_target: EdgeTarget,
         point: Point,
         data: T,
-    ) -> EdgeTarget {
+    ) -> Vec<EdgeTarget> {
         self.st
             .add_point_to_edge_impl(edge_target, point, data, false)
     }
