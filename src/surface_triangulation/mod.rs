@@ -197,40 +197,64 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         table.to_string()
     }
     pub fn debug_dump(&self, msg: Option<&str>) {
-        static N: AtomicUsize = AtomicUsize::new(0);
-        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // Don't dump during tests
-        #[cfg(not(test))]
-        if n < 20 {
-            // let n =  % 20
-            let js = serde_json::to_string_pretty(self).unwrap();
-            let mut table = if let Some(msg) = msg {
-                format!("{}\n", msg)
-            } else {
-                String::from("\n")
-            };
-            table.push_str(&self.debug_table());
-            // let filename = if old_n % 2 == 0 { "a.json" } else { "b.json" };
-            let filename = format!("{}", n);
-            // let filename = if let Some(msg) = msg {
-            //     format!("{} - {}", n, msg)
-            // } else {
-            //     format!("{}", n)
-            // };
-            eprintln!("outputting: {}", filename);
-            let dir = "affrad_debug";
-            let dir_json = "affrad_debug_json";
-            std::fs::create_dir_all(dir).unwrap();
-            std::fs::create_dir_all(dir_json).unwrap();
-            std::fs::write(format!("{}/{}.affrad_debug.json", dir_json, filename), js).unwrap();
-            std::fs::write(format!("{}/{}.affrad_debug.txt", dir, filename), table).unwrap();
+        #[cfg(debug_assertions)]
+        {
+            static N: AtomicUsize = AtomicUsize::new(0);
+            let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            // Don't dump during tests
+            #[cfg(not(test))]
+            if n < 20 {
+                // let n =  % 20
+                let js = serde_json::to_string_pretty(self).unwrap();
+                let mut table = if let Some(msg) = msg {
+                    format!("{}\n", msg)
+                } else {
+                    String::from("\n")
+                };
+                table.push_str(&self.debug_table());
+                // let filename = if old_n % 2 == 0 { "a.json" } else { "b.json" };
+                let filename = format!("{}", n);
+                // let filename = if let Some(msg) = msg {
+                //     format!("{} - {}", n, msg)
+                // } else {
+                //     format!("{}", n)
+                // };
+                eprintln!("outputting: {}", filename);
+                let dir = "affrad_debug";
+                let dir_json = "affrad_debug_json";
+                std::fs::create_dir_all(dir).unwrap();
+                std::fs::create_dir_all(dir_json).unwrap();
+                std::fs::write(format!("{}/{}.affrad_debug.json", dir_json, filename), js).unwrap();
+                std::fs::write(format!("{}/{}.affrad_debug.txt", dir, filename), table).unwrap();
+            }
         }
+    }
+}
+
+impl<T:Default> SurfaceTriangulation<T> {
+    pub fn with_frozen(&mut self,f:fn(&mut SurfaceTriangulationStable<T>)) {
+        // TODO: replace these memory swaps with a closure after measuring
+        // performance.
+        let mut triangulation = SurfaceTriangulation::new_with_default(
+            Point::new(0.0, 0.0),
+            Point::new(1.0, 0.0),
+            Point::new(1.0, 1.0),
+        );
+        // debug_assert_spaces(self);
+        // TODO: replaces with Default, which could be more efficient as it
+        // creates a new triangulation.
+        std::mem::swap(self, &mut triangulation);
+        let mut sts = triangulation.freeze();
+        f(&mut sts);
+        triangulation = sts.unfreeze();
+        std::mem::swap(self, &mut triangulation);
     }
 }
 impl<T> SurfaceTriangulation<T> {
     pub fn freeze(self) -> SurfaceTriangulationStable<T> {
         SurfaceTriangulationStable { st: self }
     }
+
     fn is_tri_real(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
         let first = edge_ref;
         let mut current = first;
@@ -749,7 +773,6 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         None
     }
 }
-
 
 impl<T: Default> SurfaceTriangulation<T> {
     pub fn new_with_default(a: Point, b: Point, c: Point) -> Self {
