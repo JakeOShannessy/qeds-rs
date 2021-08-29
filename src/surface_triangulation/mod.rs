@@ -485,14 +485,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         point: Point,
         data: T,
     ) -> EdgeTarget {
-        // eprintln!("adding to edge");
         let is_boundary = self.is_boundary(self.qeds.edge_a_ref(edge_target));
-        // let is_boundary = false;
-        eprintln!("is boundary: {}", is_boundary);
-        // if is_boundary {
-        //     edge_target = edge_target.sym();
-        // }
-        // TODO: the insertion algorithm doesn't properly handle edge cases.
         if is_boundary {
             if self.is_outward_boundary(self.qeds.edge_a_ref(edge_target)) {
                 edge_target = edge_target.sym();
@@ -517,22 +510,14 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         debug_assert_spaces(self);
         let x_onext = self.qeds.edge_a_ref(edge_target).onext().target();
         let x_dprev = self.qeds.edge_a_ref(edge_target).d_prev().target();
-        // let x_lnext = self.qeds.edge_a_ref(edge_target).d_prev().target();
         let x_oprev = self.qeds.edge_a_ref(edge_target).oprev().target();
         debug_assert_ne!(x_onext, edge_target);
         debug_assert_ne!(x_dprev, edge_target);
-        // let dia_a_indices = self.get_segment_indices(self.qeds.edge_a_ref(edge_target).d_prev().sym());
         self.debug_dump(Some("Before delete"));
         self.qeds.delete(edge_target);
         self.debug_dump(Some(&format!("Delete[{}]", to_edge_name(edge_target))));
-        // let dia_c = self.qeds.edge_a_ref(edge_target);
-        // let dia_a = dia_c.sym().onext().target();
-        // let dia_e = dia_c.l_next().target();
-        // assert_eq!(dia_e,dia_a.sym());
-        // edge_target = onext;
 
         let first_index = self.qeds.edge_a_ref(x_onext).edge().point;
-        eprintln!("first index: {}", first_index);
         let new_index = self.vertices.len();
         self.vertices.push(Segment::new(point, data));
         let base = self.qeds.make_edge_with_a(first_index, new_index).target();
