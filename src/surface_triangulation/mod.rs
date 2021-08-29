@@ -9,10 +9,10 @@ use crate::triangulation::is_ccw_certain;
 use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
 use std::marker::PhantomData;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
-
+mod stable;
 use serde::{Deserialize, Serialize};
+pub use stable::*;
 
 pub fn edge_from_target<T: Clone>(
     target: EdgeTarget,
@@ -128,8 +128,7 @@ pub fn to_vertex_name(i: usize) -> String {
 }
 impl<T: Serialize> SurfaceTriangulation<T> {
     pub fn debug_table(&self) -> String {
-        use prettytable::*;
-        use prettytable::{row, Cell, Row, Table};
+        use prettytable::{Cell, Row, Table};
         // Create the table
         let mut table = Table::new();
 
@@ -177,19 +176,14 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         table.add_row(dest);
         let mut edge_table = table.to_string();
         let points_table = self.debug_points_table();
-        edge_table.push_str("\n");
+        edge_table.push('\n');
         edge_table.push_str(&points_table);
         edge_table
     }
     pub fn debug_points_table(&self) -> String {
-        use prettytable::*;
-        use prettytable::{row, Cell, Row, Table};
+        use prettytable::{Cell, Row, Table};
         // Create the table
         let mut table = Table::new();
-        fn to_letter(i: usize) -> char {
-            char::from_u32((b'a' + ((i % 26) as u8)).into()).unwrap()
-        }
-
         let mut headers = Row::empty();
         headers.add_cell(Cell::new("Name"));
         headers.add_cell(Cell::new("Point"));
@@ -203,12 +197,12 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         table.to_string()
     }
     pub fn debug_dump(&self, msg: Option<&str>) {
-        return;
         static N: AtomicUsize = AtomicUsize::new(0);
-        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst) % 20;
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // Don't dump during tests
-        // #[cfg(not(test))]
+        #[cfg(not(test))]
         if n < 20 {
+            // let n =  % 20
             let js = serde_json::to_string_pretty(self).unwrap();
             let mut table = if let Some(msg) = msg {
                 format!("{}\n", msg)
@@ -234,6 +228,9 @@ impl<T: Serialize> SurfaceTriangulation<T> {
     }
 }
 impl<T> SurfaceTriangulation<T> {
+    pub fn freeze(self) -> SurfaceTriangulationStable<T> {
+        SurfaceTriangulationStable { st: self }
+    }
     fn is_tri_real(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
         let first = edge_ref;
         let mut current = first;
@@ -388,12 +385,79 @@ impl<T> SurfaceTriangulation<T> {
     }
 }
 
+impl<T> SurfaceTriangulation<T> {
+    /// Warning: this is very inefficient and just for testing.
+    fn retriangulate_all_single_pass(&mut self) -> usize {
+        let mut swaps = 0;
+        #[allow(clippy::needless_collect)]
+        let edge_targets: Vec<EdgeTarget> =
+            self.qeds.base_edges().map(|edge| edge.target()).collect();
+        for e in edge_targets.into_iter() {
+            if self.del_test(e) && self.concave_test(e) {
+                swaps += 1;
+                self.swap(e);
+            }
+        }
+        swaps
+    }
+
+    pub fn swap(&mut self, e: EdgeTarget) {
+        let a = self.qeds.edge_a_ref(e).oprev().target();
+        let b = self.qeds.edge_a_ref(e).sym().oprev().target();
+
+        self.qeds.splice(e, a);
+        self.qeds.splice(e.sym(), b);
+
+        let a_lnext = self.qeds.edge_a_ref(a).l_next().target();
+        self.qeds.splice(e, a_lnext);
+
+        let b_lnext = self.qeds.edge_a_ref(b).l_next().target();
+        self.qeds.splice(e.sym(), b_lnext);
+
+        let a_dest = self.qeds.edge_a_ref(a).sym().edge().point;
+        let b_dest = self.qeds.edge_a_ref(b).sym().edge().point;
+        self.qeds.edge_a_mut(e).point = a_dest;
+        self.qeds.edge_a_mut(e.sym()).point = b_dest;
+    }
+
+    /// Perform Delaunay swapping on the entire triangulation until complete.
+    /// Should not be necessary, mainly included for testing.
+    pub fn retriangulate_all(&mut self) -> usize {
+        let mut iterations = 0;
+        let mut total_swaps = 0;
+        loop {
+            if iterations > 100 {
+                // panic!("too many triangulation iterations");
+                break total_swaps;
+            }
+            let swaps = self.retriangulate_all_single_pass();
+            total_swaps += swaps;
+            if swaps == 0 {
+                break total_swaps;
+            }
+            iterations += 1;
+        }
+    }
+}
+
 impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
     pub fn add_to_quad_unchecked(
+        &mut self,
+        edge_target: EdgeTarget,
+        point: Point,
+        data: T,
+    ) -> EdgeTarget {
+        let e = self.add_to_quad_unchecked_impl(edge_target, point, data, true);
+        // self.retriangulate_suspect_edges(e, point, first_index);
+        e
+    }
+
+    fn add_to_quad_unchecked_impl(
         &mut self,
         mut edge_target: EdgeTarget,
         point: Point,
         data: T,
+        retriangulate: bool,
     ) -> EdgeTarget {
         let first_index = self.qeds.edge_a_ref(edge_target).edge().point;
         let new_index = self.vertices.len();
@@ -410,7 +474,9 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         }
         let e = self.qeds.edge_a_ref(base).oprev().target();
         debug_assert_spaces(self);
-        self.retriangulate_suspect_edges(e, point, first_index);
+        if retriangulate {
+            self.retriangulate_suspect_edges(e, point, first_index);
+        }
         debug_assert_eq!(
             self.vertices
                 .get(self.qeds.edge_a_ref(base.sym()).edge().point)
@@ -418,12 +484,6 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
                 .point(),
             point
         );
-        // self.retriangulate_all();
-        // for fail in self.fail_del_test() {
-        //     eprintln!("{:?} failed del test", fail);
-        // }
-        // debug_assert_eq!(0, self.n_fail_del_test());
-        // eprintln!("inserted: {}", point);
         debug_assert_spaces(self);
         base.sym()
     }
@@ -439,14 +499,20 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
 
     /// The edge this returns should always have the added point at its origin.
     /// It should not result in non-CCW triangles.
-    pub fn add_point(&mut self, mut point: Point, data: T) -> Option<EdgeTarget> {
-        self.add_point_raw(point, data, false)
+    pub fn add_point(&mut self, point: Point, data: T) -> Option<EdgeTarget> {
+        self.add_point_raw(point, data, false, true)
     }
 
-    pub fn add_point_force(&mut self, mut point: Point, data: T) -> Option<EdgeTarget> {
-        self.add_point_raw(point, data, true)
+    pub fn add_point_force(&mut self, point: Point, data: T) -> Option<EdgeTarget> {
+        self.add_point_raw(point, data, true, true)
     }
-    fn add_point_raw(&mut self, mut point: Point, data: T, force: bool) -> Option<EdgeTarget> {
+    fn add_point_raw(
+        &mut self,
+        mut point: Point,
+        data: T,
+        force: bool,
+        retriangulate: bool,
+    ) -> Option<EdgeTarget> {
         point.snap();
         self.update_bounds(point);
         debug_assert_spaces(self);
@@ -456,7 +522,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
             Location::OnPoint(edge) => Some(edge.target()),
             Location::OnEdge(edge) => {
                 let target = edge.target();
-                Some(self.add_point_to_edge_unchecked(target, point, data))
+                Some(self.add_point_to_edge_unchecked(target, point, data, retriangulate))
             }
             Location::OnFace(edge) => {
                 let (pa, pb) = self.get_segment(edge);
@@ -472,7 +538,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
                     assert!(ccw);
                 }
                 let target = edge.target();
-                Some(self.add_to_quad_unchecked(target, point, data))
+                Some(self.add_to_quad_unchecked_impl(target, point, data, retriangulate))
             }
         }
     }
@@ -484,6 +550,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         mut edge_target: EdgeTarget,
         point: Point,
         data: T,
+        retriangulate: bool,
     ) -> EdgeTarget {
         let is_boundary = self.is_boundary(self.qeds.edge_a_ref(edge_target));
         if is_boundary {
@@ -497,15 +564,24 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
             self.qeds.delete(edge_target);
             self.debug_dump(Some("1After Delete"));
             edge_target = t;
-            self.add_to_quad_unchecked(edge_target, point, data)
+            self.add_to_quad_unchecked_impl(edge_target, point, data, retriangulate)
         }
     }
 
     fn add_to_boundary_unchecked(
         &mut self,
-        mut edge_target: EdgeTarget,
+        edge_target: EdgeTarget,
         point: Point,
         data: T,
+    ) -> EdgeTarget {
+        self.add_to_boundary_unchecked_impl(edge_target, point, data, true)
+    }
+    fn add_to_boundary_unchecked_impl(
+        &mut self,
+        edge_target: EdgeTarget,
+        point: Point,
+        data: T,
+        retriangulate: bool,
     ) -> EdgeTarget {
         debug_assert_spaces(self);
         let x_onext = self.qeds.edge_a_ref(edge_target).onext().target();
@@ -560,8 +636,11 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         // let e = self.qeds.edge_a_ref(base).oprev().target();
         debug_assert_spaces(self);
         // self.retriangulate_suspect_edges(edge_target, point, first_index);
-        // TODO: remove this.
-        // self.retriangulate_all();
+        // TODO: Formulate a concept of suspect edge rather than retriangulating
+        // everything.
+        if retriangulate {
+            self.retriangulate_all();
+        }
         // assert_eq!(0, self.retriangulate_all());
         // self.retriangulate_all();
         // for fail in self.fail_del_test() {
@@ -573,13 +652,23 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
         base.sym()
     }
 
-    /// Add a point to a specified edge. If the point lies on one of the
-    /// vertices just add it there.
     pub fn add_point_to_edge(
         &mut self,
         edge_target: EdgeTarget,
         point: Point,
         data: T,
+    ) -> EdgeTarget {
+        self.add_point_to_edge_impl(edge_target, point, data, true)
+    }
+
+    /// Add a point to a specified edge. If the point lies on one of the
+    /// vertices just add it there.
+    pub fn add_point_to_edge_impl(
+        &mut self,
+        edge_target: EdgeTarget,
+        point: Point,
+        data: T,
+        retriangulate: bool,
     ) -> EdgeTarget {
         {
             let point_a = self
@@ -598,7 +687,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
             } else if point_b == point {
                 edge_target.sym()
             } else {
-                self.add_point_to_edge_unchecked(edge_target, point, data)
+                self.add_point_to_edge_unchecked(edge_target, point, data, retriangulate)
             }
         }
     }
@@ -701,24 +790,6 @@ impl<T: Clone> SurfaceTriangulation<T> {
         result
     }
 
-    pub fn swap(&mut self, e: EdgeTarget) {
-        let a = self.qeds.edge_a_ref(e).oprev().target();
-        let b = self.qeds.edge_a_ref(e).sym().oprev().target();
-
-        self.qeds.splice(e, a);
-        self.qeds.splice(e.sym(), b);
-
-        let a_lnext = self.qeds.edge_a_ref(a).l_next().target();
-        self.qeds.splice(e, a_lnext);
-
-        let b_lnext = self.qeds.edge_a_ref(b).l_next().target();
-        self.qeds.splice(e.sym(), b_lnext);
-
-        let a_dest = self.qeds.edge_a_ref(a).sym().edge().point;
-        let b_dest = self.qeds.edge_a_ref(b).sym().edge().point;
-        self.qeds.edge_a_mut(e).point = a_dest;
-        self.qeds.edge_a_mut(e.sym()).point = b_dest;
-    }
     fn retriangulate_suspect_edges(&mut self, mut e: EdgeTarget, point: Point, first_i: usize) {
         // The suspect edges are e(.Onext.Lprev)^k for k=0,1,2,3...
         loop {
@@ -737,6 +808,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
             let e_org = self.vertices.get(e_org_i).unwrap().point;
             if self.lies_right_strict(self.qeds.edge_a_ref(e), t_dest)
                 && del_test_ccw(e_org, t_dest, e_dest, point)
+            // TODO:uncomment
             // && !self.is_boundary(self.qeds.edge_a_ref(e))
             {
                 self.swap(e);
@@ -775,41 +847,6 @@ impl<T: Clone> SurfaceTriangulation<T> {
         }
         fails
     }
-
-    /// Warning: this is very inefficient and just for testing.
-    fn retriangulate_all_single_pass(&mut self) -> usize {
-        let mut swaps = 0;
-        #[allow(clippy::needless_collect)]
-        let edge_targets: Vec<EdgeTarget> =
-            self.qeds.base_edges().map(|edge| edge.target()).collect();
-        for e in edge_targets.into_iter() {
-            if self.del_test(e) && self.concave_test(e) {
-                swaps += 1;
-                self.swap(e);
-            }
-        }
-        swaps
-    }
-
-    /// Perform Delaunay swapping on the entire triangulation until complete.
-    /// Should not be necessary, mainly included for testing.
-    pub fn retriangulate_all(&mut self) -> usize {
-        let mut iterations = 0;
-        let mut total_swaps = 0;
-        loop {
-            if iterations > 100 {
-                // panic!("too many triangulation iterations");
-                break total_swaps;
-            }
-            let swaps = self.retriangulate_all_single_pass();
-            total_swaps += swaps;
-            if swaps == 0 {
-                break total_swaps;
-            }
-            iterations += 1;
-        }
-    }
-
     // fn get_outside(&self) -> Option<EdgeTarget> {
     //     // Find at least one edge with an Out property.
     //     for (i, quad) in self.qeds.quads.iter() {
