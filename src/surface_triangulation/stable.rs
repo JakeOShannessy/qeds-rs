@@ -2,27 +2,34 @@
 //! retriangulation.
 use crate::point::*;
 use crate::qeds::*;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::SurfaceTriangulation;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.
-pub struct SurfaceTriangulationStable<T> {
-    pub st: SurfaceTriangulation<T>,
+pub struct SurfaceTriangulationStable<'a, T> {
+    pub st: &'a mut SurfaceTriangulation<T>,
 }
 
-impl<T> SurfaceTriangulationStable<T> {
-    pub fn unfreeze(mut self) -> SurfaceTriangulation<T> {
+impl<'a, T> Drop for SurfaceTriangulationStable<'a, T> {
+    fn drop(&mut self) {
         self.st.retriangulate_all();
-        self.st
+        //         self.discretisation.unfreeze()
     }
+}
+
+impl<'a, T> SurfaceTriangulationStable<'a, T> {
+    // pub fn unfreeze(mut self) -> SurfaceTriangulation<T> {
+    //     self.st.retriangulate_all();
+    //     self.st
+    // }
     pub fn base_targets(&self) -> impl Iterator<Item = EdgeTarget> + '_ {
         self.st.base_targets()
     }
 }
 
-impl<T: Clone + Default + Serialize> SurfaceTriangulationStable<T> {
+impl<'a, T: Clone + Default + Serialize> SurfaceTriangulationStable<'a, T> {
     /// Add a point to a specified edge. If the point lies on one of the
     /// vertices just add it there.
     pub fn add_point_to_edge(

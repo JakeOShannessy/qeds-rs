@@ -232,7 +232,7 @@ impl<T: Serialize> SurfaceTriangulation<T> {
 }
 
 impl<T:Default> SurfaceTriangulation<T> {
-    pub fn with_frozen(&mut self,f:fn(&mut SurfaceTriangulationStable<T>)) {
+    pub fn with_frozen(&mut self,f:fn(SurfaceTriangulationStable<'_,T>)) {
         // TODO: replace these memory swaps with a closure after measuring
         // performance.
         let mut triangulation = SurfaceTriangulation::new_with_default(
@@ -244,14 +244,14 @@ impl<T:Default> SurfaceTriangulation<T> {
         // TODO: replaces with Default, which could be more efficient as it
         // creates a new triangulation.
         std::mem::swap(self, &mut triangulation);
-        let mut sts = triangulation.freeze();
-        f(&mut sts);
-        triangulation = sts.unfreeze();
+        let sts = triangulation.freeze();
+        f(sts);
+        // triangulation = sts.unfreeze();
         std::mem::swap(self, &mut triangulation);
     }
 }
 impl<T> SurfaceTriangulation<T> {
-    pub fn freeze(self) -> SurfaceTriangulationStable<T> {
+    pub fn freeze(&mut self) -> SurfaceTriangulationStable<T> {
         SurfaceTriangulationStable { st: self }
     }
 
