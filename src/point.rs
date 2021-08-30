@@ -1,3 +1,4 @@
+#[cfg(serde)]
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter},
@@ -8,7 +9,8 @@ use std::{
 // to limit to safe operations. This wrapper will enforce the minimum signficant
 // unit value (i.e. the smallest epsilon) and force us to check for overflows
 // (unless we opt-out).
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub struct Point {
     pub x: f64,
     pub y: f64,

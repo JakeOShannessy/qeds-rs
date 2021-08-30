@@ -2,8 +2,8 @@
 //! retriangulation.
 use crate::point::*;
 use crate::qeds::*;
+#[cfg(serde)]
 use serde::Serialize;
-
 use super::SurfaceTriangulation;
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ impl<'a, T> SurfaceTriangulationStable<'a, T> {
     }
 }
 
-impl<'a, T: Clone + Default + Serialize> SurfaceTriangulationStable<'a, T> {
+impl<'a, T: Clone + Default> SurfaceTriangulationStable<'a, T> {
     /// Add a point to a specified edge. If the point lies on one of the
     /// vertices just add it there.
     pub fn add_point_to_edge(

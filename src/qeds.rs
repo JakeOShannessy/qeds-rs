@@ -1,4 +1,5 @@
 use crate::point::*;
+#[cfg(serde)]
 use serde::{Deserialize, Serialize};
 use slab::Slab;
 
@@ -39,7 +40,8 @@ impl<'a, AData, BData> Iterator for BoundaryIter<'a, AData, BData> {
 }
 
 /// This data structure is a single instance of a quad-edge data structure.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub struct Qeds<AData, BData> {
     /// The vector of quads which we index into.
     pub quads: Slab<Quad<AData, BData>>,
@@ -308,7 +310,8 @@ impl<'a, AData, BData> Iterator for BaseEdgeIter<'a, AData, BData> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub struct Quad<AData, BData> {
     pub edges_a: [Edge<AData>; 2],
     pub edges_b: [Edge<BData>; 2],
@@ -710,7 +713,8 @@ impl<AData, BData> Eq for EdgeRefB<'_, AData, BData> {}
 
 // r and f can fit in one byte. If we limit the size of qeds we could fit it in
 // the edge index.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub struct EdgeTarget {
     // The index of the Quad in the Qeds.
     pub e: usize,
@@ -786,7 +790,8 @@ impl<'a, AData, BData> EdgeABMut<'a, AData, BData> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub struct Edge<Data> {
     pub next: EdgeTarget,
     pub point: Data,

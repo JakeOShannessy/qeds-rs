@@ -9,6 +9,7 @@ use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
 use std::marker::PhantomData;
 mod stable;
+#[cfg(serde)]
 use serde::{Deserialize, Serialize};
 pub use stable::*;
 
@@ -75,7 +76,8 @@ impl From<NodeTarget> for EdgeTarget {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub struct Segment<T> {
     /// The point at the origin of this edge.
     pub point: Point,
@@ -97,8 +99,9 @@ impl<T> HasPoint for Segment<T> {
 /// An offset into the vertices vector.
 pub type VertexIndex = usize;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 /// A Qeds data structure specialised to a 2d triangulation.
+#[derive(Clone, Debug)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub struct SurfaceTriangulation<T> {
     /// The quad-edge data structure we use as the basis for the triangulation.
     pub qeds: Qeds<VertexIndex, Space>,
@@ -124,7 +127,7 @@ pub fn to_edge_name(target: EdgeTarget) -> String {
 pub fn to_vertex_name(i: usize) -> String {
     format!("P{}", i)
 }
-impl<T: Serialize> SurfaceTriangulation<T> {
+impl<T> SurfaceTriangulation<T> {
     pub fn debug_table(&self) -> String {
         use prettytable::{Cell, Row, Table};
         // Create the table
@@ -201,7 +204,7 @@ impl<T: Serialize> SurfaceTriangulation<T> {
         let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // Don't dump during tests
         if n < 20 {
-            let js = serde_json::to_string_pretty(self).unwrap();
+            // let js = serde_json::to_string_pretty(self).unwrap();
             let mut table = if let Some(msg) = msg {
                 format!("{}\n", msg)
             } else {
@@ -211,10 +214,10 @@ impl<T: Serialize> SurfaceTriangulation<T> {
             let filename = format!("{}", n);
             eprintln!("outputting: {}", filename);
             let dir = "affrad_debug";
-            let dir_json = "affrad_debug_json";
+            // let dir_json = "affrad_debug_json";
             std::fs::create_dir_all(dir).unwrap();
-            std::fs::create_dir_all(dir_json).unwrap();
-            std::fs::write(format!("{}/{}.affrad_debug.json", dir_json, filename), js).unwrap();
+            // std::fs::create_dir_all(dir_json).unwrap();
+            // std::fs::write(format!("{}/{}.affrad_debug.json", dir_json, filename), js).unwrap();
             std::fs::write(format!("{}/{}.affrad_debug.txt", dir, filename), table).unwrap();
         }
     }
@@ -433,7 +436,7 @@ impl<T> SurfaceTriangulation<T> {
     }
 }
 
-impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
+impl<T: Default + Clone> SurfaceTriangulation<T> {
     pub fn add_to_quad_unchecked(
         &mut self,
         edge_target: EdgeTarget,
@@ -1342,7 +1345,8 @@ impl<'a, T> Iterator for NodeIter<'a, T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
 pub enum Space {
     In,
     Out,
@@ -2012,7 +2016,7 @@ fn calc_angle(p1: Point, central_point: Point, p2: Point) -> f64 {
 }
 
 /// Assert that every node as a component.
-pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangulation<T>) {
+pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
     #[cfg(debug_assertions)]
     {
         #[cfg(not(test))]
