@@ -1,5 +1,5 @@
 use crate::point::*;
-#[cfg(serde)]
+#[cfg(serialize)]
 use serde::{Deserialize, Serialize};
 use slab::Slab;
 

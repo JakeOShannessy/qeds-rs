@@ -9,7 +9,7 @@ use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
 use std::marker::PhantomData;
 mod stable;
-#[cfg(serde)]
+#[cfg(serialize)]
 use serde::{Deserialize, Serialize};
 pub use stable::*;
 
@@ -128,6 +128,7 @@ pub fn to_vertex_name(i: usize) -> String {
     format!("P{}", i)
 }
 impl<T> SurfaceTriangulation<T> {
+    #[cfg(serialize)]
     pub fn debug_table(&self) -> String {
         use prettytable::{Cell, Row, Table};
         // Create the table
@@ -181,6 +182,7 @@ impl<T> SurfaceTriangulation<T> {
         edge_table.push_str(&points_table);
         edge_table
     }
+    #[cfg(serialize)]
     pub fn debug_points_table(&self) -> String {
         use prettytable::{Cell, Row, Table};
         // Create the table
@@ -197,7 +199,7 @@ impl<T> SurfaceTriangulation<T> {
         }
         table.to_string()
     }
-    #[cfg(all(debug_assertions, not(test)))]
+    #[cfg(all(debug_assertions, not(test), serialize))]
     pub fn debug_dump(&self, msg: Option<&str>) {
         use std::sync::atomic::AtomicUsize;
         static N: AtomicUsize = AtomicUsize::new(0);
@@ -2019,7 +2021,7 @@ fn calc_angle(p1: Point, central_point: Point, p2: Point) -> f64 {
 pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
     #[cfg(debug_assertions)]
     {
-        #[cfg(not(test))]
+        #[cfg(all(not(test),serialize))]
         triangulation.debug_dump(None);
         {
             // Debug spokes

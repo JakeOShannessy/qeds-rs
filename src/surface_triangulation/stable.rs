@@ -1,10 +1,10 @@
 //! A surface triangulation is a triangulation with boundaries and no
 //! retriangulation.
+use super::SurfaceTriangulation;
 use crate::point::*;
 use crate::qeds::*;
-#[cfg(serde)]
+#[cfg(serialize)]
 use serde::Serialize;
-use super::SurfaceTriangulation;
 
 #[derive(Debug)]
 /// A Qeds data structure specialised to a 2d triangulation.

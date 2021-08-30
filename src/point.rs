@@ -1,4 +1,4 @@
-#[cfg(serde)]
+#[cfg(serialize)]
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter},
