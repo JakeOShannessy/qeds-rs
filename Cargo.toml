@@ -5,12 +5,16 @@ name = "qeds"
 version = "0.3.0"
 
 [dependencies]
-getrandom = {version = "0.2", features = ["js"]}
-prettytable-rs = {version="0.8", optional = true}
-rand = "0.8"
-robust = "0.2"
-serde = {version = "1", features = ["derive"], optional = true}
 slab = {version = "0.4"}
+robust = "0.2"
+
+# used for randon locating
+rand = "0.8"
+getrandom = {version = "0.2", features = ["js"]}
+
+# serialize
+prettytable-rs = {version="0.8", optional = true}
+serde = {version = "1", features = ["derive"], optional = true}
 
 [dev-dependencies]
 quickcheck = "1"
