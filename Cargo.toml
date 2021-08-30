@@ -2,7 +2,7 @@
 authors = ["Jake O'Shannessy <joshannessy@gmail.com>"]
 edition = "2018"
 name = "qeds"
-version = "0.1.1"
+version = "0.2.0"
 
 [dependencies]
 getrandom = {version = "0.2", features = ["js"]}
