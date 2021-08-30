@@ -15,15 +15,10 @@ pub struct SurfaceTriangulationStable<'a, T> {
 impl<'a, T> Drop for SurfaceTriangulationStable<'a, T> {
     fn drop(&mut self) {
         self.st.retriangulate_all();
-        //         self.discretisation.unfreeze()
     }
 }
 
 impl<'a, T> SurfaceTriangulationStable<'a, T> {
-    // pub fn unfreeze(mut self) -> SurfaceTriangulation<T> {
-    //     self.st.retriangulate_all();
-    //     self.st
-    // }
     pub fn base_targets(&self) -> impl Iterator<Item = EdgeTarget> + '_ {
         self.st.base_targets()
     }

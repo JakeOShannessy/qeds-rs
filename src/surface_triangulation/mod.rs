@@ -230,25 +230,6 @@ impl<T: Serialize> SurfaceTriangulation<T> {
     }
 }
 
-impl<T: Default> SurfaceTriangulation<T> {
-    pub fn with_frozen(&mut self, f: fn(SurfaceTriangulationStable<'_, T>)) {
-        // TODO: replace these memory swaps with a closure after measuring
-        // performance.
-        let mut triangulation = SurfaceTriangulation::new_with_default(
-            Point::new(0.0, 0.0),
-            Point::new(1.0, 0.0),
-            Point::new(1.0, 1.0),
-        );
-        // debug_assert_spaces(self);
-        // TODO: replaces with Default, which could be more efficient as it
-        // creates a new triangulation.
-        std::mem::swap(self, &mut triangulation);
-        let sts = triangulation.freeze();
-        f(sts);
-        // triangulation = sts.unfreeze();
-        std::mem::swap(self, &mut triangulation);
-    }
-}
 impl<T> SurfaceTriangulation<T> {
     pub fn freeze(&mut self) -> SurfaceTriangulationStable<'_, T> {
         SurfaceTriangulationStable { st: self }
@@ -297,7 +278,6 @@ impl<T> SurfaceTriangulation<T> {
 
     pub fn is_outward_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
         edge_ref.sym().rot().edge().point == Space::Out
-        // !self.curves_left_certain(edge_ref)
     }
 
     pub fn is_boundary(&self, edge_ref: EdgeRefA<'_, VertexIndex, Space>) -> bool {
@@ -567,7 +547,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
                         point,
                         left_or_right(pa, pb, point)
                     );
-                    assert!(ccw);
+                    debug_assert!(ccw);
                 }
                 let target = edge.target();
                 Some(self.add_to_quad_unchecked_impl(target, point, data, retriangulate))
@@ -775,7 +755,7 @@ impl<T: Default + Clone + Serialize> SurfaceTriangulation<T> {
 
 impl<T: Default> SurfaceTriangulation<T> {
     pub fn new_with_default(a: Point, b: Point, c: Point) -> Self {
-        assert!(is_ccw(a, b, c));
+        debug_assert!(is_ccw(a, b, c));
         let seg_a = Segment::new(a, Default::default());
         let seg_b = Segment::new(b, Default::default());
         let seg_c = Segment::new(c, Default::default());
@@ -1351,7 +1331,7 @@ impl<'a, T: Clone> Iterator for TriangleEdgeIter<'a, T> {
         let tri_a = self.raw_triangles.next()?;
         let tri_b = tri_a.l_next();
         let tri_c = tri_b.l_next();
-        assert_eq!(tri_c.l_next().target, tri_a.target);
+        debug_assert_eq!(tri_c.l_next().target, tri_a.target);
         Some([
             (
                 tri_a.target,
