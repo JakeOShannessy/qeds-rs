@@ -137,7 +137,6 @@ pub fn is_ccw(a: Point, b: Point, c: Point) -> bool {
     robust::orient2d(a.into(), b.into(), c.into()) > 0.0
 }
 
-
 pub fn is_ccw_certain(a: Point, b: Point, c: Point) -> bool {
     robust::orient2d(a.into(), b.into(), c.into()) > 0.1
 }

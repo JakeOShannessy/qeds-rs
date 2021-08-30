@@ -1,7 +1,6 @@
 //! A surface triangulation is a triangulation with boundaries.
 use crate::point::*;
 use crate::qeds::*;
-use crate::triangulation::cocircular;
 use crate::triangulation::del_test_ccw;
 use crate::triangulation::direction;
 use crate::triangulation::is_ccw;
@@ -231,8 +230,8 @@ impl<T: Serialize> SurfaceTriangulation<T> {
     }
 }
 
-impl<T:Default> SurfaceTriangulation<T> {
-    pub fn with_frozen(&mut self,f:fn(SurfaceTriangulationStable<'_,T>)) {
+impl<T: Default> SurfaceTriangulation<T> {
+    pub fn with_frozen(&mut self, f: fn(SurfaceTriangulationStable<'_, T>)) {
         // TODO: replace these memory swaps with a closure after measuring
         // performance.
         let mut triangulation = SurfaceTriangulation::new_with_default(
@@ -251,7 +250,7 @@ impl<T:Default> SurfaceTriangulation<T> {
     }
 }
 impl<T> SurfaceTriangulation<T> {
-    pub fn freeze(&mut self) -> SurfaceTriangulationStable<T> {
+    pub fn freeze(&mut self) -> SurfaceTriangulationStable<'_, T> {
         SurfaceTriangulationStable { st: self }
     }
 
@@ -867,44 +866,6 @@ impl<T: Clone> SurfaceTriangulation<T> {
         }
     }
 
-    fn n_fail_del_test(&self) -> usize {
-        let mut n_fails = 0;
-        let edge_targets = self.qeds.base_edges().map(|edge| edge.target());
-        for e in edge_targets {
-            {
-                if self.del_test(e) && self.concave_test(e) && !self.cocircular(e) {
-                    n_fails += 1;
-                }
-            }
-        }
-        n_fails
-    }
-
-    fn fail_del_test(&self) -> Vec<EdgeTarget> {
-        let mut fails = vec![];
-        let edge_targets = self.qeds.base_edges().map(|edge| edge.target());
-        for e in edge_targets {
-            {
-                if self.del_test(e) && self.concave_test(e) {
-                    fails.push(e);
-                }
-            }
-        }
-        fails
-    }
-    // fn get_outside(&self) -> Option<EdgeTarget> {
-    //     // Find at least one edge with an Out property.
-    //     for (i, quad) in self.qeds.quads.iter() {
-    //         if quad.edges_b[0].point == Space::Out {
-    //             return Some(EdgeTarget::new(i, 1, 0));
-    //         }
-    //         if quad.edges_b[1].point == Space::Out {
-    //             return Some(EdgeTarget::new(i, 3, 0));
-    //         }
-    //     }
-    //     None
-    // }
-
     pub fn neighbouring_points<'a>(
         &'a self,
         edge: EdgeRefA<'a, VertexIndex, Space>,
@@ -921,16 +882,16 @@ impl<T: Clone> SurfaceTriangulation<T> {
         neighbouring_refs
     }
 
-    pub fn locate(&self, mut point: Point) -> Option<Location<'_>> {
+    pub fn locate(&self, point: Point) -> Option<Location<'_>> {
         self.locate_raw(point, false)
     }
 
-    pub fn locate_force(&self, mut point: Point) -> Option<Location<'_>> {
+    pub fn locate_force(&self, point: Point) -> Option<Location<'_>> {
         self.locate_raw(point, true)
     }
 
     // TODO: This algorithm is known to fail in non-Delaunay triangulations.
-    fn locate_raw(&self, mut point: Point, force: bool) -> Option<Location<'_>> {
+    fn locate_raw(&self, mut point: Point, _force: bool) -> Option<Location<'_>> {
         // panic!("don't use locate");
         point.snap();
         use rand::Rng;
@@ -1194,24 +1155,6 @@ impl<T> SurfaceTriangulation<T> {
         // eprintln!("del_test edge: {:?}", self.get_segment(edge));
         // eprintln!("del_test points: {:?}", [a, b, c, d]);
         del_test_ccw(a, b, c, d)
-    }
-    fn cocircular(&self, e: EdgeTarget) -> bool {
-        // Get the edge.
-        let edge = self.qeds.edge_a_ref(e);
-        // Get all of the vertices around this egdge in a CCW order.
-        let a = self.vertices.get(edge.oprev().edge().point).unwrap().point;
-        let b = self
-            .vertices
-            .get(edge.r_prev().sym().edge().point)
-            .unwrap()
-            .point;
-        let c = self.vertices.get(edge.l_next().edge().point).unwrap().point;
-        let d = self
-            .vertices
-            .get(edge.onext().sym().edge().point)
-            .unwrap()
-            .point;
-        cocircular(a, b, c, d)
     }
     pub fn get_segment(&self, edge: EdgeRefA<'_, VertexIndex, Space>) -> (Point, Point) {
         let i1 = edge.edge().point;
@@ -2303,7 +2246,7 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
             }
         }
         {
-            for (i, quad) in triangulation.qeds.quads.iter() {
+            for (_i, quad) in triangulation.qeds.quads.iter() {
                 assert_ne!(quad.edges_a[0].point, quad.edges_a[1].point);
             }
         }
@@ -2315,7 +2258,7 @@ pub fn debug_assert_spaces<T: Clone + Serialize>(triangulation: &SurfaceTriangul
         }
         for target in triangulation.base_targets() {
             let edge_ref = triangulation.qeds.edge_a_ref(target);
-            let segment = triangulation.get_segment(edge_ref);
+            // let segment = triangulation.get_segment(edge_ref);
             // eprintln!("edge: {}-{}", segment.0, segment.1);
             assert_ne!(edge_ref, edge_ref.d_prev(), "d_prev is self");
             assert_ne!(edge_ref, edge_ref.onext(), "onext is self");
