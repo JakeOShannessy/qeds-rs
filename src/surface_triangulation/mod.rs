@@ -445,9 +445,8 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         point: Point,
         data: T,
     ) -> Vec<EdgeTarget> {
-        let e = self.add_to_quad_unchecked_impl(edge_target, point, data, true);
         // self.retriangulate_suspect_edges(e, point, first_index);
-        e
+        self.add_to_quad_unchecked_impl(edge_target, point, data, true)
     }
 
     fn add_to_quad_unchecked_impl(
@@ -524,7 +523,6 @@ impl<T: Default + Clone> SurfaceTriangulation<T> {
         self.update_bounds(point);
         debug_assert_spaces(self);
         // assert_eq!(0, self.retriangulate_all());
-        eprintln!("location: {:?}", self.locate_raw(point, force));
         match self.locate_raw(point, force)? {
             Location::OnPoint(edge) => Some(vec![edge.target()]),
             Location::OnEdge(edge) => {
@@ -1428,6 +1426,154 @@ pub fn get_edge<T>(
     None
 }
 
+fn calc_angle(p1: Point, central_point: Point, p2: Point) -> f64 {
+    let ba = p1 - central_point;
+    let bc = p2 - central_point;
+    ((ba.x * bc.x + ba.y * bc.y) / (ba.magnitude() * bc.magnitude())).acos()
+}
+
+/// Assert that every node as a component.
+pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
+    #[cfg(debug_assertions)]
+    {
+        #[cfg(all(not(test), serialize))]
+        triangulation.debug_dump(None);
+        {
+            // Debug spokes
+            for edge in triangulation.qeds.base_edges() {
+                let vertex_index = edge.edge().point;
+                let mut current = edge;
+                let mut i = 0;
+                let mut other_vertex_indices = vec![];
+                loop {
+                    assert_eq!(vertex_index, current.edge().point);
+                    other_vertex_indices.push(current.sym().edge().point);
+                    current = current.onext();
+                    if current == edge {
+                        break;
+                    }
+
+                    i += 1;
+                    if i > 2000 {
+                        panic!("hit iteration limit");
+                    }
+                }
+                let mut total_angle = 0.0;
+                // Double up the first vertex
+                other_vertex_indices.push(other_vertex_indices[0]);
+                let mut other_vertex_indices = other_vertex_indices.into_iter();
+                let mut prev_vertex_index = other_vertex_indices.next().unwrap();
+                let central_point = triangulation.vertices.get(vertex_index).unwrap().point;
+                let mut angles = vec![];
+                for other_vertex_index in other_vertex_indices {
+                    let p1 = triangulation.vertices.get(prev_vertex_index).unwrap().point;
+                    let p2 = triangulation
+                        .vertices
+                        .get(other_vertex_index)
+                        .unwrap()
+                        .point;
+                    let mut angle = calc_angle(p1, central_point, p2);
+                    angle = match direction(p1, central_point, p2) {
+                        Direction::Left => 2.0 * std::f64::consts::PI - angle,
+                        Direction::Straight => std::f64::consts::PI,
+                        Direction::Right => angle,
+                    };
+                    if angle.is_nan() {
+                        angle = std::f64::consts::PI;
+                    }
+                    angles.push((prev_vertex_index, vertex_index, other_vertex_index, angle));
+                    total_angle += angle;
+                    prev_vertex_index = other_vertex_index;
+                }
+                if (total_angle - 2.0 * std::f64::consts::PI).abs() >= 0.1 {
+                    eprintln!("failing angles");
+                    for (a, b, c, angle) in angles {
+                        let p1 = triangulation.vertices.get(a).unwrap().point;
+                        let p2 = triangulation.vertices.get(b).unwrap().point;
+                        let p3 = triangulation.vertices.get(c).unwrap().point;
+                        let ccw_val = robust::orient2d(p1.into(), p2.into(), p3.into());
+                        eprintln!(
+                            "angle [{}-{}-{}]({:?}: {:.2}): {:.2}° {}-{}-{} raw_angle: {:.2}°",
+                            to_vertex_name(a),
+                            to_vertex_name(b),
+                            to_vertex_name(c),
+                            direction(p1, p2, p3),
+                            ccw_val,
+                            angle / std::f64::consts::PI * 180.0,
+                            p1,
+                            p2,
+                            p3,
+                            calc_angle(p1, p2, p3) / std::f64::consts::PI * 180.0
+                        );
+                    }
+                }
+                assert!(
+                    (total_angle - 2.0 * std::f64::consts::PI).abs() < 0.1,
+                    "total angle around {} is {}, diff is {}",
+                    to_vertex_name(vertex_index),
+                    total_angle,
+                    (total_angle - 2.0 * std::f64::consts::PI).abs()
+                );
+            }
+        }
+        {
+            // Debug dual spokes
+            let mut n_many_spokes = None;
+            for edge in triangulation.qeds.base_edges() {
+                let edge = edge.rot();
+                let mut i = 0;
+                let mut current = edge;
+                loop {
+                    current = current.onext();
+                    if current == edge {
+                        if i != 2 {
+                            if let Some(n) = n_many_spokes {
+                                if n != i {
+                                    panic!("wrong number of dual spokes");
+                                }
+                            } else {
+                                n_many_spokes = Some(i);
+                            }
+                        }
+                        break;
+                    }
+                    i += 1;
+                    if i > 2000 {
+                        panic!("hit iteration limit");
+                    }
+                }
+            }
+        }
+        {
+            for (_i, quad) in triangulation.qeds.quads.iter() {
+                assert_ne!(quad.edges_a[0].point, quad.edges_a[1].point);
+            }
+        }
+        // Get all B edges.
+        let mut b_targets = Vec::new();
+        for (i, _quad) in triangulation.qeds.quads.iter() {
+            b_targets.push(EdgeTarget::new(i, 1, 0));
+            b_targets.push(EdgeTarget::new(i, 3, 0));
+        }
+        for target in triangulation.base_targets() {
+            let edge_ref = triangulation.qeds.edge_a_ref(target);
+            assert_ne!(edge_ref, edge_ref.d_prev(), "d_prev is self");
+            assert_ne!(edge_ref, edge_ref.onext(), "onext is self");
+        }
+        for triangle in triangulation.triangles() {
+            let ccw =
+                crate::triangulation::is_ccw(triangle.0.point, triangle.1.point, triangle.2.point);
+            if !ccw {
+                eprintln!(
+                    "{}-{}-{}",
+                    triangle.0.point, triangle.1.point, triangle.2.point
+                );
+            }
+            assert!(ccw);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1949,7 +2095,7 @@ mod tests {
 
     #[test]
     fn t10() {
-        let points = vec![
+        let points = [
             Point {
                 x: -17.870000839231405,
                 y: 2.7686743613015225e-6,
@@ -2008,153 +2154,5 @@ mod tests {
             debug_assert_spaces(&triangulation);
         }
         debug_assert_spaces(&triangulation);
-    }
-}
-
-fn calc_angle(p1: Point, central_point: Point, p2: Point) -> f64 {
-    let ba = p1 - central_point;
-    let bc = p2 - central_point;
-    ((ba.x * bc.x + ba.y * bc.y) / (ba.magnitude() * bc.magnitude())).acos()
-}
-
-/// Assert that every node as a component.
-pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
-    #[cfg(debug_assertions)]
-    {
-        #[cfg(all(not(test),serialize))]
-        triangulation.debug_dump(None);
-        {
-            // Debug spokes
-            for edge in triangulation.qeds.base_edges() {
-                let vertex_index = edge.edge().point;
-                let mut current = edge;
-                let mut i = 0;
-                let mut other_vertex_indices = vec![];
-                loop {
-                    assert_eq!(vertex_index, current.edge().point);
-                    other_vertex_indices.push(current.sym().edge().point);
-                    current = current.onext();
-                    if current == edge {
-                        break;
-                    }
-
-                    i += 1;
-                    if i > 2000 {
-                        panic!("hit iteration limit");
-                    }
-                }
-                let mut total_angle = 0.0;
-                // Double up the first vertex
-                other_vertex_indices.push(other_vertex_indices[0]);
-                let mut other_vertex_indices = other_vertex_indices.into_iter();
-                let mut prev_vertex_index = other_vertex_indices.next().unwrap();
-                let central_point = triangulation.vertices.get(vertex_index).unwrap().point;
-                let mut angles = vec![];
-                for other_vertex_index in other_vertex_indices {
-                    let p1 = triangulation.vertices.get(prev_vertex_index).unwrap().point;
-                    let p2 = triangulation
-                        .vertices
-                        .get(other_vertex_index)
-                        .unwrap()
-                        .point;
-                    let mut angle = calc_angle(p1, central_point, p2);
-                    angle = match direction(p1, central_point, p2) {
-                        Direction::Left => 2.0 * std::f64::consts::PI - angle,
-                        Direction::Straight => std::f64::consts::PI,
-                        Direction::Right => angle,
-                    };
-                    if angle.is_nan() {
-                        angle = std::f64::consts::PI;
-                    }
-                    angles.push((prev_vertex_index, vertex_index, other_vertex_index, angle));
-                    total_angle += angle;
-                    prev_vertex_index = other_vertex_index;
-                }
-                if (total_angle - 2.0 * std::f64::consts::PI).abs() >= 0.1 {
-                    eprintln!("failing angles");
-                    for (a, b, c, angle) in angles {
-                        let p1 = triangulation.vertices.get(a).unwrap().point;
-                        let p2 = triangulation.vertices.get(b).unwrap().point;
-                        let p3 = triangulation.vertices.get(c).unwrap().point;
-                        let ccw_val = robust::orient2d(p1.into(), p2.into(), p3.into());
-                        eprintln!(
-                            "angle [{}-{}-{}]({:?}: {:.2}): {:.2}° {}-{}-{} raw_angle: {:.2}°",
-                            to_vertex_name(a),
-                            to_vertex_name(b),
-                            to_vertex_name(c),
-                            direction(p1, p2, p3),
-                            ccw_val,
-                            angle / std::f64::consts::PI * 180.0,
-                            p1,
-                            p2,
-                            p3,
-                            calc_angle(p1, p2, p3) / std::f64::consts::PI * 180.0
-                        );
-                    }
-                }
-                assert!(
-                    (total_angle - 2.0 * std::f64::consts::PI).abs() < 0.1,
-                    "total angle around {} is {}, diff is {}",
-                    to_vertex_name(vertex_index),
-                    total_angle,
-                    (total_angle - 2.0 * std::f64::consts::PI).abs()
-                );
-            }
-        }
-        {
-            // Debug dual spokes
-            let mut n_many_spokes = None;
-            for edge in triangulation.qeds.base_edges() {
-                let edge = edge.rot();
-                let mut i = 0;
-                let mut current = edge;
-                loop {
-                    current = current.onext();
-                    if current == edge {
-                        if i != 2 {
-                            if let Some(n) = n_many_spokes {
-                                if n != i {
-                                    panic!("wrong number of dual spokes");
-                                }
-                            } else {
-                                n_many_spokes = Some(i);
-                            }
-                        }
-                        break;
-                    }
-                    i += 1;
-                    if i > 2000 {
-                        panic!("hit iteration limit");
-                    }
-                }
-            }
-        }
-        {
-            for (_i, quad) in triangulation.qeds.quads.iter() {
-                assert_ne!(quad.edges_a[0].point, quad.edges_a[1].point);
-            }
-        }
-        // Get all B edges.
-        let mut b_targets = Vec::new();
-        for (i, _quad) in triangulation.qeds.quads.iter() {
-            b_targets.push(EdgeTarget::new(i, 1, 0));
-            b_targets.push(EdgeTarget::new(i, 3, 0));
-        }
-        for target in triangulation.base_targets() {
-            let edge_ref = triangulation.qeds.edge_a_ref(target);
-            assert_ne!(edge_ref, edge_ref.d_prev(), "d_prev is self");
-            assert_ne!(edge_ref, edge_ref.onext(), "onext is self");
-        }
-        for triangle in triangulation.triangles() {
-            let ccw =
-                crate::triangulation::is_ccw(triangle.0.point, triangle.1.point, triangle.2.point);
-            if !ccw {
-                eprintln!(
-                    "{}-{}-{}",
-                    triangle.0.point, triangle.1.point, triangle.2.point
-                );
-            }
-            assert!(ccw);
-        }
     }
 }

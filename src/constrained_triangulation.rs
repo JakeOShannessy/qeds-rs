@@ -1215,7 +1215,7 @@ impl ConstrainedTriangulation {
         // exclusion we have also identified all L2 nodes, but they have not yet
         // been marked. Any unmarked node after this point is L2.
         while let Some(triangle) = queue.pop_front() {
-            if tri_info.get(&triangle).is_none() {
+            if !tri_info.contains_key(&triangle) {
                 let mut triangle_current = Some(triangle);
                 while triangle_current.is_some() {
                     tri_info.insert(
@@ -1244,7 +1244,7 @@ impl ConstrainedTriangulation {
                                     triangle_temp,
                                 );
                             }
-                        } else if tri_info.get(&triangle_temp).is_none() {
+                        } else if !tri_info.contains_key(&triangle_temp) {
                             triangle_next = Some(triangle_temp);
                         }
                     }
@@ -1550,7 +1550,6 @@ impl ConstrainedTriangulation {
                         let edge_data = edge.edge(self);
                         let next_triangle = edge.sym().get_tri_canonical(self);
                         let next_triangle_info = tri_info.get(&next_triangle);
-                        if !edge_data.point.constraint {}
                         if !edge_data.point.constraint && next_triangle_info.is_none() {
                             q.push_back(next_triangle);
                         }
@@ -2934,8 +2933,7 @@ mod tests {
     #[test]
     fn regress1() {
         let mut triangulation = ConstrainedTriangulation::new();
-        let segments = vec![
-            (
+        let segments = [(
                 Point::new(-75.3645612469715, 10.649471266802962),
                 Point::new(11.264242662961536, -74.1427143080474),
             ),
@@ -2946,8 +2944,7 @@ mod tests {
             (
                 Point::new(-71.01084733411076, 30.660749902036656),
                 Point::new(67.62855075915658, -89.10279376500583),
-            ),
-        ];
+            )];
         for (p1, p2) in segments.iter() {
             triangulation.add_constraint(*p1, *p2);
         }
@@ -2957,8 +2954,7 @@ mod tests {
     #[test]
     fn regress2() {
         let mut triangulation = ConstrainedTriangulation::new();
-        let segments = vec![
-            (
+        let segments = [(
                 Point {
                     x: -40.292118735040106,
                     y: 82.0073097016039,
@@ -3007,8 +3003,7 @@ mod tests {
                     x: -44.04842079916467,
                     y: 19.50193303235106,
                 },
-            ),
-        ];
+            )];
         for (p1, p2) in segments.iter() {
             triangulation.add_constraint(*p1, *p2);
         }
@@ -3099,8 +3094,7 @@ mod tests {
     #[test]
     fn regress4() {
         let mut triangulation = ConstrainedTriangulation::new();
-        let segments = vec![
-            (
+        let segments = [(
                 Point {
                     x: 49.354794208915905,
                     y: 77.9312265303424,
@@ -3149,8 +3143,7 @@ mod tests {
                     x: -63.66585352841398,
                     y: -59.20567981731186,
                 },
-            ),
-        ];
+            )];
         for (p1, p2) in segments.iter() {
             triangulation.add_constraint(*p1, *p2);
         }
@@ -3160,8 +3153,7 @@ mod tests {
     #[test]
     fn regress5() {
         let mut triangulation = ConstrainedTriangulation::new();
-        let segments = vec![
-            (
+        let segments = [(
                 Point {
                     x: -51.400285762967044,
                     y: 78.08416289394077,
@@ -3200,8 +3192,7 @@ mod tests {
                     x: 98.04001031185186,
                     y: -81.61857001089774,
                 },
-            ),
-        ];
+            )];
         for (p1, p2) in segments.iter() {
             triangulation.add_constraint(*p1, *p2);
         }
@@ -3211,8 +3202,7 @@ mod tests {
     #[test]
     fn regress6() {
         let mut triangulation = ConstrainedTriangulation::new();
-        let segments = vec![
-            (
+        let segments = [(
                 Point {
                     x: -71.48547038818833,
                     y: -74.39322987310905,
@@ -3271,8 +3261,7 @@ mod tests {
                     x: -58.187890315932435,
                     y: -11.073968979166835,
                 },
-            ),
-        ];
+            )];
         for (p1, p2) in segments.iter() {
             triangulation.add_constraint(*p1, *p2);
         }

@@ -158,7 +158,7 @@ impl SafeFloat {
     // For tests
     pub const MAX: SafeFloat = SafeFloat(4000.0);
     pub const MIN: SafeFloat = SafeFloat(-4000.0);
-    pub const EPSILON: SafeFloat = SafeFloat(1.0 / (0xf_i64 as f64) as f64);
+    pub const EPSILON: SafeFloat = SafeFloat(1.0 / (0xf_i64 as f64));
     pub fn new(f: f64) -> Option<Self> {
         let s = SafeFloat(f);
         if s <= SafeFloat::MAX && s >= SafeFloat::MIN {

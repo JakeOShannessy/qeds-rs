@@ -78,8 +78,6 @@ impl<AData: HasPoint + Clone, BData: Clone> Face<'_, AData, BData> {
         let mut xsum = 0.0;
         let mut ysum = 0.0;
         for (pa, pb) in self.vertices_pairs() {
-            let pa = pa;
-            let pb = pb;
             xsum += (pa.x + pb.x) * (pa.x * pb.y - pb.x * pa.y);
             ysum += (pa.y + pb.y) * (pa.x * pb.y - pb.x * pa.y);
         }
@@ -92,8 +90,6 @@ impl<AData: HasPoint + Clone, BData: Clone> Face<'_, AData, BData> {
     pub fn signed_area(&self) -> f64 {
         let mut sum = 0.0;
         for (pa, pb) in self.vertices_pairs() {
-            let pa = pa;
-            let pb = pb;
             sum += pa.x * pb.y - pb.x * pa.y;
         }
         0.5 * sum
