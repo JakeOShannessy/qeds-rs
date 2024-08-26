@@ -1,4 +1,4 @@
-#[cfg(serialize)]
+#[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Display, Formatter},
@@ -10,7 +10,7 @@ use std::{
 // unit value (i.e. the smallest epsilon) and force us to check for overflows
 // (unless we opt-out).
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct Point {
     pub x: f64,
     pub y: f64,

@@ -9,7 +9,7 @@ use crate::triangulation::HasPoint;
 use crate::triangulation::Lies;
 use std::marker::PhantomData;
 mod stable;
-#[cfg(serialize)]
+#[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 pub use stable::*;
 
@@ -77,7 +77,7 @@ impl From<NodeTarget> for EdgeTarget {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct Segment<T> {
     /// The point at the origin of this edge.
     pub point: Point,
@@ -101,7 +101,7 @@ pub type VertexIndex = usize;
 
 /// A Qeds data structure specialised to a 2d triangulation.
 #[derive(Clone, Debug)]
-#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct SurfaceTriangulation<T> {
     /// The quad-edge data structure we use as the basis for the triangulation.
     pub qeds: Qeds<VertexIndex, Space>,
@@ -128,7 +128,7 @@ pub fn to_vertex_name(i: usize) -> String {
     format!("P{}", i)
 }
 impl<T> SurfaceTriangulation<T> {
-    #[cfg(serialize)]
+    #[cfg(feature = "serialize")]
     pub fn debug_table(&self) -> String {
         use prettytable::{Cell, Row, Table};
         // Create the table
@@ -182,7 +182,7 @@ impl<T> SurfaceTriangulation<T> {
         edge_table.push_str(&points_table);
         edge_table
     }
-    #[cfg(serialize)]
+    #[cfg(feature = "serialize")]
     pub fn debug_points_table(&self) -> String {
         use prettytable::{Cell, Row, Table};
         // Create the table
@@ -199,7 +199,7 @@ impl<T> SurfaceTriangulation<T> {
         }
         table.to_string()
     }
-    #[cfg(all(debug_assertions, not(test), serialize))]
+    #[cfg(all(debug_assertions, not(test), feature = "serialize"))]
     pub fn debug_dump(&self, msg: Option<&str>) {
         use std::sync::atomic::AtomicUsize;
         static N: AtomicUsize = AtomicUsize::new(0);
@@ -1346,7 +1346,7 @@ impl<'a, T> Iterator for NodeIter<'a, T> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(use_serde, derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub enum Space {
     In,
     Out,
@@ -1436,7 +1436,7 @@ fn calc_angle(p1: Point, central_point: Point, p2: Point) -> f64 {
 pub fn debug_assert_spaces<T: Clone>(triangulation: &SurfaceTriangulation<T>) {
     #[cfg(debug_assertions)]
     {
-        #[cfg(all(not(test), serialize))]
+        #[cfg(all(not(test), feature = "serialize"))]
         triangulation.debug_dump(None);
         {
             // Debug spokes

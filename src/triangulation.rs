@@ -1142,7 +1142,7 @@ mod tests {
     fn bad_collinear() {
         let b = Point::new(-10000.0, -1.0);
         let c = Point::new(-9000.0, -1.0);
-        let d = Point::new(std::f64::MIN, -1.0 - std::f64::EPSILON);
+        let d = Point::new(f64::MIN, -1.0 - f64::EPSILON);
         let p = Point::new(10000.0, -1.0);
         // This is a problem as it means we can have a triangle with both sides
         // collinear with another point. This indicates that our collinearity

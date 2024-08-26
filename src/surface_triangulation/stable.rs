@@ -3,7 +3,7 @@
 use super::SurfaceTriangulation;
 use crate::point::*;
 use crate::qeds::*;
-#[cfg(serialize)]
+#[cfg(feature = "serialize")]
 use serde::Serialize;
 
 #[derive(Debug)]
