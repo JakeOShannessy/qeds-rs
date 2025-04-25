@@ -579,7 +579,7 @@ impl ConstrainedTriangulation {
     pub fn locate(&self, point: Point) -> Option<EdgeRefA<'_, Segment, ()>> {
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut current_iterations = 0;
         let edge = loop {
             current_iterations += 1;
@@ -588,7 +588,7 @@ impl ConstrainedTriangulation {
             }
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
-            let onext_first: bool = rng.gen();
+            let onext_first: bool = rng.random();
             if point == e.edge().point.point {
                 break Some(e);
             } else if point == e.sym().edge().point.point {

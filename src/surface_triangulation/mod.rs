@@ -831,7 +831,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
         point.snap();
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut current_iterations = 0;
         let location: Location<'_> = loop {
             current_iterations += 1;
@@ -852,7 +852,7 @@ impl<T: Clone> SurfaceTriangulation<T> {
             }
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
-            let onext_first: bool = rng.gen();
+            let onext_first: bool = rng.random();
             let has_left_face = self.curves_left(e);
             // If it liest not_right to a boundary edge it must be either out of bounds or on this triangular edge
             if !has_left_face && !self.lies_right_strict(e, point) {

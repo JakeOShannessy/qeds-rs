@@ -196,7 +196,7 @@ impl Triangulation {
     pub fn locate(&self, point: Point) -> Option<EdgeRefA<'_, Point, ()>> {
         use rand::Rng;
         let mut e = self.some_edge_a().unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut current_iterations = 0;
         loop {
             current_iterations += 1;
@@ -205,7 +205,7 @@ impl Triangulation {
             }
             // A random variable to determine if onext is tested first. If not
             // it is tested second.
-            let onext_first: bool = rng.gen();
+            let onext_first: bool = rng.random();
             if point == e.edge().point || point == e.sym().edge().point {
                 return Some(e);
             } else if e.lies_right_strict(point) {
