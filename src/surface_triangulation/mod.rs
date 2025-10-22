@@ -836,11 +836,12 @@ impl<T: Clone> SurfaceTriangulation<T> {
         let location: Location<'_> = loop {
             current_iterations += 1;
             if current_iterations > 200 {
-                for vertex in self.vertices.iter() {
-                    eprintln!("{}", vertex.point);
-                }
+                // for vertex in self.vertices.iter() {
+                //     eprintln!("{}", vertex.point);
+                // }
                 // #[cfg(debug_assertions)]
                 // panic!("locating failed for: {}", point);
+                eprintln!("locating failed for: {}", point);
                 return None;
             }
             if point == self.vertices.get(e.edge().point).unwrap().point {
