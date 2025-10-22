@@ -310,7 +310,7 @@ impl<'a, AData, BData> Iterator for BaseEdgeIter<'a, AData, BData> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct Quad<AData, BData> {
     pub edges_a: [Edge<AData>; 2],
@@ -760,7 +760,7 @@ pub struct Vertex {
     pub point: Point,
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
 pub enum EdgeAB<'a, AData, BData> {
     A(&'a Edge<AData>),
     B(&'a Edge<BData>),
@@ -775,7 +775,7 @@ impl<'a, AData, BData> EdgeAB<'a, AData, BData> {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, Eq, PartialOrd)]
 pub enum EdgeABMut<'a, AData, BData> {
     A(&'a mut Edge<AData>),
     B(&'a mut Edge<BData>),
@@ -790,7 +790,7 @@ impl<'a, AData, BData> EdgeABMut<'a, AData, BData> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub struct Edge<Data> {
     pub next: EdgeTarget,
