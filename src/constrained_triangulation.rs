@@ -77,6 +77,10 @@ impl L3NodeTarget {
             next: Some(next),
         }
     }
+
+    pub fn target(&self) -> EdgeTarget {
+        self.0 .0
+    }
 }
 
 impl From<L3NodeTarget> for NodeTarget {
@@ -186,6 +190,11 @@ impl NodeTarget {
             .into_iter()
             .map(|e| e.target())
             .collect()
+    }
+
+    pub fn centroid(self, triangulation: &ConstrainedTriangulation) -> Option<Point> {
+        let edge_ref = triangulation.qeds.edge_a_ref(self.into());
+        edge_ref.l_face().centroid()
     }
 
     pub fn adjacent_tris(self, triangulation: &ConstrainedTriangulation) -> Vec<NodeTarget> {
@@ -308,6 +317,10 @@ impl L3Path {
             ended: false,
         }
     }
+
+    // pub fn as_edge(&self) -> EdgeTarget {
+    //     self.
+    // }
 }
 
 pub struct L3PathNodeIter<'a> {
@@ -335,6 +348,8 @@ impl<'a> Iterator for L3PathNodeIter<'a> {
                 let mut nodes: Vec<NodeTarget> = corridor.collect();
                 // Reverse the nodes so we can use it as a stack.
                 nodes.reverse();
+                nodes.pop();
+                // eprintln!("corridor nodes: {nodes:?}");
                 self.pending_nodes = nodes;
                 self.path = &self.path[1..];
                 Some(current_node)

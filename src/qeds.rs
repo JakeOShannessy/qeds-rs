@@ -751,6 +751,10 @@ impl EdgeTarget {
     pub fn sym_rot(&self) -> Self {
         self.offset_r(3)
     }
+
+    pub fn as_code(&self) -> String {
+        format!("e{}-r{}-f{}", self.e, self.r, self.f)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
